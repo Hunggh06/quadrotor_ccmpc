@@ -1,5 +1,7 @@
 # UI CSS Probe Report — Streamlit 1.60.0
 
+> Archived report, not maintained. See the [archive index](README.md).
+
 **Streamlit Version:** 1.60.0
 **Playwright Version:** 1.62.0
 **Probe URL:** http://localhost:8501

@@ -1,6 +1,18 @@
-# Validation
+# Test strategy
 
-Validation is layered:
+> **In short:** what is tested at each level, and the checks each pipeline
+> stage must pass before its output is trusted.
+>
+> **Related:** [claims and statistics](claims-and-statistics.md),
+> [results history](results-history.md), [release checklist](../guides/release.md)
+
+Run the whole suite from `2.Code/`:
+
+```bash
+uv run pytest -q
+```
+
+## Test layers
 
 1. Unit tests: dynamics equilibrium, linearization, rotated matrix square root and covariance PSD.
 2. Integration tests: deterministic repeatability, artifact schema and adaptive reports.
@@ -42,24 +54,19 @@ Before claiming a chance-constraint probability, verify Gaussian assumptions, co
 calibration, obstacle prediction error, finite-sample collision rate and nonzero slack. FOV and soft
 constraints require their own residual plots and must not be inferred from trajectory appearance.
 
-## Stage 1 controller-interface regression
+## Checks per pipeline stage
 
-The native deterministic baseline must remain numerically equivalent after the
-belief-interface refactor. The verified dynamic scenario result is:
+### Controller interface (Stage 1)
 
-| Check | Result |
-|---|---:|
-| Completed steps | 200 / 200 |
-| Final goal error | 0.00013550 m |
-| Minimum clearance | 0.29991421 m |
-| Collision | false |
-| NaN state | false |
+The deterministic baseline must stay numerically equivalent after any change
+to the belief interface; reference values are in
+[results history](results-history.md#stage-1--controller-interface-regression-dynamic-scenario).
 
 The runtime integration tests also assert that `ControlSolution` diagnostics
 reach `CoupledStep`, and that goal completion, `Run again`, reset, pause,
 single-step and explicit stop preserve their v1.2.1 behavior.
 
-## Stage 2 estimator checks
+### Sensing and estimation (Stage 2)
 
 Run `config/mujoco_native_estimation.yaml` and report separately:
 
@@ -74,7 +81,7 @@ The controller must receive tracker-extrapolated obstacle means. Ground-truth
 motion is allowed only in the sensor simulator, collision/clearance metrics and
 validation logs.
 
-## Stage 3 horizon covariance checks
+### Covariance propagation (Stage 3)
 
 Run `config/mujoco_native_estimation.yaml` and verify:
 
@@ -83,19 +90,19 @@ Run `config/mujoco_native_estimation.yaml` and verify:
 - horizon index zero matches the belief supplied to that controller tick;
 - every covariance is finite, symmetric and positive semidefinite;
 - terminal position sigma responds to process-noise configuration;
-- deterministic control, clearance and collision regression are unchanged
-  because Stage 3 does not yet tighten a constraint.
+- deterministic control, clearance and collision regression are unchanged,
+  because propagation alone does not tighten a constraint.
 
 The `feedback_lqr` mode is checked as a propagation approximation, not as a
-replacement controller. No chance-constraint guarantee may be claimed until
-Stage 4 makes the propagated uncertainty change the optimization constraint.
+replacement controller. No chance-constraint guarantee may be claimed from
+propagation alone.
 
-## Stage 4 spherical chance-constraint checks
+### Chance constraints (Stage 4)
 
 Run `config/mujoco_native_estimation.yaml` and
 `config/mujoco_native_ccmpc.yaml` with the same seed. Verify:
 
-- the deterministic run preserves the Stage 3 final error and clearance;
+- the deterministic run preserves the estimation-only final error and clearance;
 - `tightened_safety_radius >= nominal_safety_radius`;
 - `tightening == Phi^-1(1-epsilon) * projected_sigma`;
 - `chance_residual + slack >= 0` within solver tolerance;
@@ -106,7 +113,7 @@ Run `config/mujoco_native_estimation.yaml` and
   deterministic run;
 - no covariance, residual, control or state contains NaN.
 
-## Stage 5 risk-budget checks
+### Risk budget (Stage 5)
 
 Run `config/mujoco_native_ccmpc.yaml` and verify:
 
@@ -117,7 +124,8 @@ Run `config/mujoco_native_ccmpc.yaml` and verify:
 - `risk_budget_allocated == risk_budget_total == 0.10` for the supplied
   three-obstacle scenario;
 - each TVP quantile equals `Phi^-1(1-risk_allocation[k,o])`;
-- changing back to `individual` reproduces Stage 4 allocations and trajectory;
+- changing back to `individual` reproduces the individual-mode allocations
+  and trajectory;
 - joint allocation produces stronger tightening than individual allocation for
   the same belief/covariance;
 - `BUDGET_OK` is not interpreted as a safety guarantee when slack is positive.
@@ -126,20 +134,8 @@ The joint budget is for one receding prediction horizon. Monte Carlo validation
 with a confidence interval is required before making an episode-level collision
 rate claim.
 
-Verified 10-second paired run, estimator seed 7:
 
-| Controller | Final error | Minimum clearance | Maximum slack | Status counts |
-|---|---:|---:|---:|---:|
-| Deterministic dynamic baseline | 0.000135502 m | 0.299914211 m | 0 | `DISABLED` |
-| Stage 4 individual, epsilon 0.05 | 0.076558310 m | 0.317015107 m | 0.064665434 m | 161 safe / 39 slack |
-| Stage 5 joint uniform, total 0.10 | 0.104444105 m | 0.410519817 m | 0.075120639 m | 114 safe / 86 slack |
-
-For the joint run, every one of 200 solves allocated 63 constraints, the
-maximum absolute budget-sum error was \(5.55\times10^{-17}\), and no collision,
-NaN state or NaN control occurred. The positive slack prevents a probabilistic
-safety guarantee despite correct risk accounting.
-
-## Stage 6 safe slack and fallback checks
+### Safety supervisor and fallback (Stage 6)
 
 Verify the supervisor independently of the optimizer using fault injection:
 
@@ -156,34 +152,7 @@ Verify the supervisor independently of the optimizer using fault injection:
 - positive slack above the numerical guarantee tolerance is never labeled
   guarantee-eligible.
 
-Verified 10-second Stage 6 run, estimator seed 7, joint uniform budget 0.10 and
-100 ms configured solve deadline:
-
-| Metric | Result |
-|---|---:|
-| Completed ticks | 200 / 200 |
-| Primary solver success | 200 / 200 |
-| Primary commands applied | 200 |
-| Nominal deadline rejects / fallback | 0 / 0 |
-| Minimum clearance | 0.410519826 m |
-| Maximum slack | 0.075120640 m |
-| Guarantee-eligible ticks | 114 |
-| Positive-slack, not-guaranteed ticks | 86 |
-| Maximum primal / dual solver residual | 9.12e-7 / 6.92e-7 |
-| Mean / p95 / p99 solve time | 60.63 / 73.62 / 81.60 ms |
-| Maximum solve time | 88.42 ms |
-| Collision / NaN | no / no |
-
-The supervisor-disabled Stage 5 regression remains exactly:
-final error 0.104444105 m, minimum clearance 0.410519817 m, 114
-`SOLVED_SAFE` and 86 `SOLVED_WITH_SLACK`.
-
-The current native NMPC does **not** pass a strict 50 ms real-time gate on the
-validation host because p99 solve time is 81.60 ms. Stage 6 validates the
-deadline-miss response; it does not claim that the solver is fast enough for a
-20 Hz deployment.
-
-## Stage 7 desktop safety-console checks
+### Desktop safety panel (Stage 7)
 
 Verify the presentation model independently of Qt:
 
@@ -199,31 +168,13 @@ Verify the presentation model independently of Qt:
 - replay projects the recorded sample fields through the same view model;
 - all four native YAML configurations round-trip with bounded alert history.
 
-When optional UI dependencies are available, additionally launch
-`config/mujoco_native_ccmpc.yaml` and verify that the Qt panel remains
-responsive while MuJoCo runs, closing either window stops cleanly, prediction
-color follows assurance state, and the deadline trace matches the configured
-50 ms acceptance limit. The Stage 7 paired-regression numbers below are
-historical measurements from the former 100 ms policy; v2.0.1 intentionally
-changes the command-acceptance deadline to match the control period.
+With the optional UI dependencies, also launch
+`config/mujoco_native_ccmpc.yaml` and check that the Qt panel stays responsive
+while MuJoCo runs, closing either window stops cleanly, prediction colour
+follows the assurance state and the deadline trace matches the configured
+50 ms acceptance limit.
 
-Paired control-path regression against Stage 6 commit `5256c82` in the same
-Python/dependency environment:
-
-| Configuration | Stage 6 | Stage 7 | Difference |
-|---|---:|---:|---:|
-| Deterministic final error | 0.000101204527 m | 0.000101204527 m | 0 |
-| Deterministic clearance | 0.299927809264 m | 0.299927809264 m | 0 |
-| CC-MPC final error | 0.104444105413 m | 0.104444105413 m | 0 |
-| CC-MPC clearance | 0.410519825565 m | 0.410519825565 m | 0 |
-| CC-MPC maximum slack | 0.075120639653 m | 0.075120639653 m | 0 |
-
-Both CC-MPC runs produced 114 guarantee-eligible ticks, 86 positive-slack
-ticks, zero fallback activations, no collision and no NaN. This paired check
-isolates Stage 7 from solver-library version drift and confirms the presentation
-integration does not change an applied command.
-
-## Stage 8 native Monte Carlo checks
+### Monte Carlo campaigns (Stage 8)
 
 Run:
 
@@ -249,58 +200,19 @@ Verify:
 - paired controller comparisons report exact McNemar tests for collision and
   success with Holm-adjusted p-values across all cells;
 - risk-budget failures, slack and fallback remain separate metrics;
-- `HORIZON_GUARANTEE_ELIGIBLE` requires every completed tick to be eligible
-  under the full gate set: joint semantics, valid budget, primary solver
-  success, available in-tolerance residuals, slack within tolerance, no
-  deadline miss and no fallback;
-- fallback, an exceeded post-solve risk certificate, or a missing certificate
-  blocks the finite-sample chance claim (`validation.chance_claim_rule:
-  risk_certificate`); positive slack is reported separately and blocks only
-  under the legacy `zero_positive_slack` rule;
+- guarantee eligibility, the claim rule and the timing gate follow
+  [claims and statistics](claims-and-statistics.md);
 - no per-horizon joint budget is reinterpreted as episode collision
   probability;
-- worst-trial timing: every trial's p99 solver time must fit in the 50 ms
-  controller period, and a trial without timing samples fails the gate;
 - interrupted runs resume only after a protocol-fingerprint match;
 - manifest, protocol/config snapshots, checkpoint, CSV, aggregate JSON,
   Markdown and PNG are all present.
 
-The default 50-seed, three-level protocol is a descriptive finite-sample
-validation. Even a result labeled `EMPIRICALLY_SUPPORTED_NOT_PROVEN` is not a
-formal proof of Gaussian calibration or an episode-wide collision guarantee.
 
-Verified Stage 8 campaign, seeds 1000–1029:
+## Release checks
 
-| Covariance | Controller | Success | Collision | Mean min clearance | Mean max slack | Fallback episodes |
-|---|---|---:|---:|---:|---:|---:|
-| `0.25 Sigma` | deterministic | 30/30 | 0/30 | 0.305261 m | 0 | 0/30 |
-| `0.25 Sigma` | individual | 30/30 | 0/30 | 0.326352 m | 0.062461 m | 16/30 |
-| `0.25 Sigma` | joint | 30/30 | 0/30 | 0.343861 m | 0.056917 m | 14/30 |
-| `Sigma` | deterministic | 30/30 | 0/30 | 0.313791 m | 0 | 2/30 |
-| `Sigma` | individual | 30/30 | 0/30 | 0.356432 m | 0.061792 m | 19/30 |
-| `Sigma` | joint | 30/30 | 0/30 | 0.414314 m | 0.070586 m | 17/30 |
-| `4 Sigma` | deterministic | 30/30 | 0/30 | 0.323614 m | 0 | 4/30 |
-| `4 Sigma` | individual | 30/30 | 0/30 | 0.467242 m | 0.079857 m | 22/30 |
-| `4 Sigma` | joint | 0/30 | 0/30 | 0.660826 m | 0.139326 m | 30/30 |
-
-All 270 episodes completed without collision, NaN or risk-budget failure. The
-joint-minus-deterministic mean clearance deltas were `+0.038600 m`,
-`+0.100523 m` and `+0.337212 m` as covariance increased. At `4 Sigma`, joint
-control traded that clearance for a mean final-error increase of `0.338990 m`;
-every episode missed the configured goal threshold.
-
-The campaign status is `VALIDATED_WITH_LIMITATIONS`. Under the gate rules of
-that release, zero collisions in 30 trials gave a two-sided Wilson 95% upper
-bound of `0.113513`, above the empirical gate `0.10`. (The current default,
-fixed before any new campaign, is the one-sided exact Clopper–Pearson bound,
-`1 - 0.05^(1/30) = 0.0950` for the same counts; the historical campaign is not
-re-graded.) Every chance-controller cell also contained positive slack and
-fallback. Median per-trial solver p99 ranged from `87.523 ms` to `95.470 ms`
-for the chance controllers, so the 50 ms real-time gate failed.
-
-## Phase 9 release-stabilization checks
-
-Version 2.0.1 adds release gates around the completed research workbench:
+Version 2.0.1 added release gates around the research workbench (the
+procedure is in the [release checklist](../guides/release.md)):
 
 - the configured rejection deadline must not exceed the controller period;
 - README commands and claims are checked against the repository;
@@ -312,6 +224,6 @@ Version 2.0.1 adds release gates around the completed research workbench:
 - an explicitly allowed dirty-source campaign is reproducible but marked
   non-release-eligible.
 
-The 30-seed Stage 8 artifact remains unchanged for auditability. Its legacy
+The 30-seed Stage 8 artifact stays unchanged for auditability. Its legacy
 commit provenance is documented in `validation/README.md`; it must not be
-presented as the clean 50-seed v2.0.1 release campaign.
+presented as the clean 50-seed release campaign.

@@ -1,14 +1,17 @@
-# Native risk-budget management
+# 5 · Risk budget
 
-## Scope
+> **In short:** decides the ε of each horizon-node/obstacle cell. *Individual*
+> gives every cell the same ε; *joint* splits one total budget evenly across
+> all `N × n_obs` cells, so the whole horizon is covered by a union bound.
+> (Stage 5.)
+>
+> **Before this:** [chance constraints](chance-constraints.md) · **Next:**
+> [safety supervisor and fallback](safety-fallback.md) · **Code:**
+> `quadrotor_mpc/control/nmpc/risk_budget.py`
 
-Stage 5 adds explicit risk semantics to the native spherical CC-NMPC. It keeps
-the Stage 4 individual mode for regression and adds a uniform joint allocation
-over every horizon-step/obstacle chance constraint used by one NMPC solve.
-
-Stage 5 does not implement adaptive/geometry-aware allocation, iterative risk
-allocation or an episode-wide probability guarantee. Stage 6 adds a separate
-post-solve safety supervisor without changing this allocator.
+Only uniform joint allocation is implemented. Adaptive or geometry-aware
+allocation, iterative risk allocation and an episode-wide probability
+guarantee are out of scope.
 
 ## Semantics
 
@@ -104,9 +107,9 @@ controller:
       tolerance: 1.0e-12
 ```
 
-Set `semantics: individual` to reproduce Stage 4. In Stage 5,
-`allocation: uniform` is the only joint allocator accepted; unsupported names
-fail configuration validation instead of silently falling back.
+Set `semantics: individual` for the per-cell mode. `allocation: uniform` is
+the only joint allocator accepted; unsupported names fail configuration
+validation instead of silently falling back.
 
 ## Runtime audit
 

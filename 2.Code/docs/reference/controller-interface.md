@@ -1,8 +1,14 @@
-# Native controller interface
+# Controller interface
 
-Stage 1 separates the native MuJoCo loop from do-mpc through a belief-based
-contract. The contract is defined in `quadrotor_mpc/core/contracts.py` and has no
-MuJoCo, CasADi or do-mpc dependency.
+> **In short:** the native runtime talks to every controller through two
+> calls, `reset(belief)` and `solve(beliefs, goal, t)`, and gets back one
+> `ControlSolution`. This page lists every input and output field. (Stage 1.)
+>
+> **Related:** [architecture](architecture.md), [overview](../concepts/overview.md)
+> · **Code:** `quadrotor_mpc/core/contracts.py`
+
+The contract has no MuJoCo, CasADi or do-mpc dependency, which keeps the
+runtime independent of the solver backend.
 
 ## Lifecycle
 
@@ -38,25 +44,31 @@ inputs are normalized at construction.
 
 ## Output contract
 
+`ControlSolution` horizon arrays (`N` = horizon steps, `n_obs` = obstacles):
+
 | Field | Meaning | Shape |
 |---|---|---:|
-| `command` | `[thrust_deviation, τx, τy, τz]` | `(4,)` |
+| `command` | `[thrust_deviation, τx, τy, τz]` actually to be applied | `(4,)` |
 | `nominal_states` | optimized mean state horizon | `(N+1, 13)` |
 | `predicted_covariances` | error-state covariance horizon | `(N+1, 12, 12)` |
 | `predicted_obstacle_covariances` | 6D covariance horizon per obstacle | `(N+1, n_obs, 6, 6)` |
 | `projected_uncertainties` | collision-normal relative standard deviation | `(N+1, n_obs)` |
 | `tightened_safety_radii` | deterministic radius supplied to the NLP (seed normals) | `(N+1, n_obs)` |
 | `chance_margins` | signed margins vs the radius re-projected on the solution | `(N+1, n_obs)` |
-| `risk_allocations` | allocated risk per horizon constraint (row 0 = 0) | `(N+1, n_obs)` |
+| `risk_allocations` | allocated risk per horizon constraint | `(N+1, n_obs)` |
 | `slacks` | nonnegative constraint relaxation | `(N+1, n_obs)` |
 
-Scalar post-solve fields: `achieved_risk_total`, `achieved_risk_max` and
-`risk_certificate_status` (`CERTIFIED`, `EXCEEDED`, `NOT_APPLICABLE`,
-`NOT_AVAILABLE`).
+Row 0 of every horizon array is the measured current state. The NLP
+constrains nodes `1..N` only, so row 0 carries zero risk and the untightened
+base radius.
 
-Row 0 of the horizon arrays is the measured current state. The NLP constrains
-nodes `1..N` only; row 0 carries zero risk and the untightened base radius.
+Scalar fields:
+
+| Field | Meaning | Type |
+|---|---|---|
 | `solver_status` | backend-independent status label | string |
+| `achieved_risk_total`, `achieved_risk_max` | post-solve linearized horizon risk (sum, largest cell) | scalar |
+| `risk_certificate_status` | `CERTIFIED`, `EXCEEDED`, `NOT_APPLICABLE`, `NOT_AVAILABLE` | string |
 | `risk_semantics` | `disabled`, `individual` or `joint` | string |
 | `risk_allocation_method` | `none` or `uniform` | string |
 | `risk_budget_total` | configured joint budget, otherwise `None` | scalar |
@@ -72,14 +84,14 @@ nodes `1..N` only; row 0 carries zero risk and the untightened base radius.
 | `solve_time_ms`, `deadline_missed` | end-to-end controller timing evidence | scalar |
 | `safety_assurance_status` | guarantee-eligibility/degraded label | string |
 
-When Stage 3 is disabled, the deterministic adapter returns zero predicted
+When covariance propagation is disabled, the deterministic adapter returns zero predicted
 covariance and zero risk allocation. When propagation is enabled, the same
 adapter returns vehicle and obstacle covariance horizons but still uses the
 unchanged deterministic obstacle constraint. Its geometric margin and implied
-violation slack are populated so the same telemetry schema is exercised before
-CC-MPC is introduced.
+violation slack are still populated, so every controller exercises the same
+telemetry schema.
 
-## Current deterministic adapter
+## Deterministic adapter
 
 `DeterministicNMPCController` owns all do-mpc-specific operations:
 
@@ -109,25 +121,11 @@ The vehicle estimator is a 12D error-state EKF around the 13D quaternion
 nominal state. Each obstacle has a position-only constant-velocity Kalman
 filter. Tracker means—not configured truth motion—form the obstacle horizon.
 
-No production code imports `4.Reference`.
+## Layers behind `solve()`
 
-## Stage 3 propagation
-
-`quadrotor_mpc/control/nmpc/covariance.py` consumes the beliefs and optimized nominal trajectory
-behind the same controller boundary. Open-loop propagation is the Stage 3
-default; finite-horizon feedback-aware LQR propagation is an optional
-diagnostic mode. See `HORIZON_COVARIANCE_PROPAGATION.md`.
-
-When `controller.chance_constraints.enabled: true`,
-`SphericalChanceConstrainedNMPCController` projects relative covariance,
-supplies tightened radii as TVPs and reports residual/slack. See
-`SPHERICAL_CHANCE_CONSTRAINTS.md`.
-
-Stage 5 delegates epsilon allocation to `quadrotor_mpc/control/nmpc/risk_budget.py`. Uniform joint
-allocation changes the per-cell quantile without changing the controller
-boundary. See `RISK_BUDGET_MANAGEMENT.md`.
-
-Stage 6 decorates this same interface with `SafeFallbackController`. It retains
-the rejected primary horizon for diagnostics but replaces `command` with the
-selected bounded fallback. Solver exceptions are represented by a finite,
-shape-valid diagnostic solution. See `SAFE_SLACK_FALLBACK.md`.
+| Layer | Class / module | Page |
+|---|---|---|
+| Covariance propagation | `control/nmpc/covariance.py` (open-loop default, `feedback_lqr` diagnostic) | [Covariance propagation](../concepts/covariance-propagation.md) |
+| Chance constraints | `SphericalChanceConstrainedNMPCController` projects relative covariance, supplies tightened radii as TVPs, reports residual and slack | [Chance constraints](../concepts/chance-constraints.md) |
+| Risk allocation | `control/nmpc/risk_budget.py` | [Risk budget](../concepts/risk-budget.md) |
+| Supervisor | `SafeFallbackController` decorates the same interface, keeps the rejected primary horizon for diagnostics and replaces `command` with the selected fallback; solver exceptions become a finite, shape-valid diagnostic solution | [Safety supervisor and fallback](../concepts/safety-fallback.md) |

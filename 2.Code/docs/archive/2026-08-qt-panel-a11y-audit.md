@@ -1,4 +1,6 @@
-# QT_PANEL_A11Y_AUDIT.md
+# Qt safety panel accessibility audit (August 2026)
+
+> Archived report, not maintained. See the [archive index](README.md).
 
 ## PySide6 Telemetry Panel — WCAG 2.2 Accessibility Audit
 
@@ -140,7 +142,7 @@ or `#4a607a` (≈ 4.51:1) to also reach AA for large text.
 | `.omo/evidence/task1_contrast.py` | One-shot WCAG 2.2 contrast audit script |
 | `.omo/evidence/task-3-contrast-after.txt` | Raw contrast table AFTER Task 3 fixes |
 | `.omo/evidence/task-3-tones-preserved.txt` | Tone hue-preservation verification |
-| `docs/QT_PANEL_A11Y_AUDIT.md` | This document — BEFORE + AFTER state, paired with FAIL analysis |
+| `docs/archive/2026-08-qt-panel-a11y-audit.md` | This document — BEFORE + AFTER state, paired with FAIL analysis |
 
 ---
 
@@ -318,7 +320,7 @@ Threshold legend: Normal text -> AA >= 4.5 | AAA >= 7.0; Large/UI -> AA >= 3.0 |
 | `.omo/evidence/task-1-baseline.txt` | Baseline: test results + dark PALETTE snapshot |
 | `.omo/evidence/task-1-light-audit.txt` | Full WCAG 2.2 contrast table (light theme) |
 | `.omo/evidence/task1_light_contrast.py` | Audit script with auto-adjust loop |
-| `docs/QT_PANEL_A11Y_AUDIT.md` | This document — Dark (Sections 1-8) + Light (Section 9) |
+| `docs/archive/2026-08-qt-panel-a11y-audit.md` | This document — Dark (Sections 1-8) + Light (Section 9) |
 
 ### 9.5 · Design Notes
 

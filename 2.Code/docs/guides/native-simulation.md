@@ -1,70 +1,37 @@
-# Native MuJoCo Viewer
+# Native simulation
 
-`run_quadrotor_mpc/interfaces/desktop/viewer.py` opens the production 13-state NMPC/MuJoCo track in a
-desktop MuJoCo window. The viewer is an observer: `quadrotor_mpc/application/native/runtime.py` remains the
-only owner of controller execution and physics stepping.
+> **In short:** run one 13-state NMPC episode on the MuJoCo Crazyflie, either
+> headless, in the desktop workbench, or in the MuJoCo 3-D window with the Qt
+> safety panel; record it and replay it later without solving.
+>
+> **Before this:** [first run](../getting-started/first-run.md) · **Related:**
+> [scenarios](scenarios.md), [desktop safety panel](../reference/desktop-safety-panel.md)
+> · **Code:** `quadrotor_mpc/interfaces/desktop/viewer.py`,
+> `quadrotor_mpc/application/native/runtime.py`
 
-## Model provenance
+The viewer is only an observer: `application/native/runtime.py` is the sole
+owner of controller execution and physics stepping.
 
-The production plant uses the
-[Bitcraze Crazyflie 2 model from Google DeepMind MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie/tree/main/bitcraze_crazyflie_2),
-vendored at commit `71f066ad0be9cd271f7ed58c030243ef157af9f4` under
-`models/bitcraze_crazyflie_2/`. The upstream MIT license is preserved.
+## Three ways to run
 
-The upstream model supplies:
+| Mode | Command | When |
+|---|---|---|
+| Workbench | `quadrotor-mpc-app` → **Simulate** | quick runs and comparisons, any OS |
+| Headless | `quadrotor-mpc-native --config <yaml> --headless` | scripts, servers, reproducible recordings |
+| 3-D viewer + safety panel | `MUJOCO_GL=glfw quadrotor-mpc-native --config <yaml>` | inspect behaviour tick by tick (Linux desktop) |
 
-| Quantity | Value |
-|---|---:|
-| Mass | `0.027 kg` |
-| $I_{xx}$ | `2.3951e-5 kg m^2` |
-| $I_{yy}$ | `2.3951e-5 kg m^2` |
-| $I_{zz}$ | `3.2347e-5 kg m^2` |
-| Hover thrust | `0.26487 N` |
-| Upstream maximum combined thrust | `0.35 N` |
+Headless runs accept `--mode {deterministic,individual,joint_uniform}`,
+`--noise-scale`, `--seed` and `--duration`, applied exactly like a Monte Carlo
+trial, and exit when the episode ends. `--progress-json` prints one
+`@@progress {...}` line per tick and a final `@@result {...}` line.
 
-The workbench loads the upstream MJCF and meshes unchanged through MuJoCo's
-virtual file system, then adds a separate ground, goal and obstacle scene. The
-old box-and-sphere `models/quadrotor.xml` was removed because it duplicated the
-reference model without trustworthy vehicle provenance.
+## Running the viewer
 
-Upstream explicitly says that its body-moment `ctrlrange` values are arbitrary.
-Therefore `vehicle.py` distinguishes sourced mass/inertia from conservative
-workbench torque assumptions. Results must not present the latter as measured
-Crazyflie actuator limits.
-
-## Runtime architecture
-
-```mermaid
-flowchart TD
-    A["Native YAML"] --> B["13-state NMPC"]
-    B --> C["Body wrench"]
-    C --> D["Crazyflie 2 MuJoCo plant"]
-    D --> B
-    D --> E["Interactive runtime"]
-    E --> F["Native MuJoCo viewer"]
-    E --> G["Qt control and telemetry process"]
-    E --> H["Recording and replay"]
-```
-
-No production module imports code from `4.Reference`. That directory is only a
-behavioral reference for the desired desktop experience.
-
-## Install and run on Linux
+Installation and OpenGL requirements are in
+[installation](../getting-started/installation.md). Then:
 
 ```bash
-cd 2.Code
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-ui.txt
-
-MUJOCO_GL=glfw quadrotor-mpc-native
-```
-
-On minimal Debian/Ubuntu installations, Qt/GLFW may also require the system
-OpenGL/XCB runtime packages:
-
-```bash
-sudo apt install libgl1 libegl1 libxcb-cursor0 libxkbcommon-x11-0
+MUJOCO_GL=glfw quadrotor-mpc-native        # default: config/mujoco_native.yaml
 ```
 
 Run the dynamic crossing scenario:
@@ -125,7 +92,7 @@ Positive slack and fallback are always displayed as `NOT GUARANTEED`.
 Transition alerts are deduplicated and bounded by `panel.maximum_alerts`.
 The panel updates at a lower rate than MuJoCo, so it does not retain an
 unbounded session or redraw at the 500 Hz physics rate. See
-[`DESKTOP_SAFETY_INTERFACE.md`](DESKTOP_SAFETY_INTERFACE.md).
+[desktop safety panel](../reference/desktop-safety-panel.md).
 After `COMPLETED`, press **Run again** to repeat the same scenario without
 restarting Python. **Reset** preserves the current pause/run mode, while
 **Run again** always resumes.
@@ -149,55 +116,8 @@ The orange transparent shell is the controller safety envelope
 actual contact geometry. Blue is the executed trail and green is the most recent
 NMPC predicted position horizon.
 
-### Dynamic obstacle schema
-
-All motion is evaluated by `obstacle_motion.py`, which is shared by NMPC TVPs,
-MuJoCo mocap bodies, clearance metrics and viewer overlays. This prevents the
-controller from predicting a different obstacle path than the plant uses.
-
-Constant velocity:
-
-```yaml
-- name: crossing
-  type: dynamic
-  radius: 0.24
-  motion:
-    type: constant_velocity
-    initial_position: [1.85, -0.80, 1.80]
-    velocity: [0.0, 0.38, 0.0]
-```
-
-Three-axis sinusoid:
-
-```yaml
-- name: oscillating
-  type: dynamic
-  radius: 0.20
-  motion:
-    type: sinusoidal
-    center: [2.35, 1.55, 2.10]
-    amplitude: [0.0, 0.0, 0.45]
-    period_s: 4.5
-    phase_rad: 0.0
-```
-
-Piecewise-linear waypoints:
-
-```yaml
-- name: patrol
-  type: dynamic
-  radius: 0.20
-  motion:
-    type: waypoints
-    repeat: true
-    points:
-      - {time_s: 0.0, position: [1.0, -0.5, 1.5]}
-      - {time_s: 2.0, position: [1.0,  0.5, 1.5]}
-      - {time_s: 4.0, position: [2.0,  0.5, 2.0]}
-```
-
-The older `amp`/`period` y-axis sinusoid remains accepted for backward
-compatibility and is normalized at configuration load time.
+Static and moving obstacles (constant velocity, sinusoid, waypoints) are
+described in [scenarios](scenarios.md#native-obstacles).
 
 ## Recording and replay
 
@@ -227,6 +147,49 @@ MUJOCO_GL=glfw quadrotor-mpc-native \
 
 It reconstructs the effective scenario, drives the same Crazyflie MuJoCo model
 through recorded states and feeds the recorded telemetry back into the panel.
+
+## Runtime architecture
+
+```mermaid
+flowchart TD
+    A["Native YAML"] --> B["13-state NMPC"]
+    B --> C["Body wrench"]
+    C --> D["Crazyflie 2 MuJoCo plant"]
+    D --> B
+    D --> E["Interactive runtime"]
+    E --> F["Native MuJoCo viewer"]
+    E --> G["Qt control and telemetry process"]
+    E --> H["Recording and replay"]
+```
+
+
+## Model provenance
+
+The production plant uses the
+[Bitcraze Crazyflie 2 model from Google DeepMind MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie/tree/main/bitcraze_crazyflie_2),
+vendored at commit `71f066ad0be9cd271f7ed58c030243ef157af9f4` under
+`models/bitcraze_crazyflie_2/`. The upstream MIT license is preserved.
+
+The upstream model supplies:
+
+| Quantity | Value |
+|---|---:|
+| Mass | `0.027 kg` |
+| $I_{xx}$ | `2.3951e-5 kg m^2` |
+| $I_{yy}$ | `2.3951e-5 kg m^2` |
+| $I_{zz}$ | `3.2347e-5 kg m^2` |
+| Hover thrust | `0.26487 N` |
+| Upstream maximum combined thrust | `0.35 N` |
+
+The workbench loads the upstream MJCF and meshes unchanged through MuJoCo's
+virtual file system, then adds a separate ground, goal and obstacle scene. The
+old box-and-sphere `models/quadrotor.xml` was removed because it duplicated the
+reference model without trustworthy vehicle provenance.
+
+Upstream explicitly says that its body-moment `ctrlrange` values are arbitrary.
+Therefore `quadrotor_mpc/core/vehicle.py` distinguishes sourced mass/inertia from conservative
+workbench torque assumptions. Results must not present the latter as measured
+Crazyflie actuator limits.
 
 ## Current fidelity boundary
 

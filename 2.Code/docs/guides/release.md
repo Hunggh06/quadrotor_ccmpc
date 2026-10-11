@@ -1,34 +1,18 @@
-# Release 2.0.1 Stabilization
+# Release checklist
 
-## Release statement
+> **In short:** the steps to cut a release: automated gates, installed-wheel
+> check, the 50-seed campaign on a clean commit, one manual desktop session,
+> then the tag.
+>
+> **Related:** [test strategy](../validation/test-strategy.md),
+> [Monte Carlo campaigns](monte-carlo.md) · history:
+> [2.0.1 notes](../archive/release-2.0.1-notes.md)
 
-Version 2.0.1 closes the planned Phase 1–8 implementation as a
-feature-complete research workbench. It does not extend the controller
-algorithm or upgrade the scientific claim. The current claim remains:
+The release claim stays: *empirically validated with documented limitations;
+not production-ready, not proven episode-wide probabilistically safe, and not
+20 Hz real-time*, until a campaign shows otherwise.
 
-> Empirically validated with documented limitations; not production-ready,
-> not proven episode-wide probabilistically safe, and not 20 Hz real-time.
-
-## Stabilization changes
-
-- Root documentation now describes measured repository behavior rather than
-  copying performance claims from the source papers.
-- Broken scenario/notebook commands were replaced with files that exist.
-- The CC-MPC command-acceptance deadline is `50 ms`, equal to the controller
-  period. Configuration validation rejects a longer deadline when late
-  solutions are configured for rejection.
-- GitHub Actions runs lint, the full Python test suite, all native config
-  checks, a real Qt panel lifecycle smoke test, distribution build and an
-  installed-wheel smoke test.
-- `uv.lock` freezes the complete cross-platform dependency resolution.
-- The wheel installs native top-level modules, six console scripts, native YAML
-  configurations and the licensed Crazyflie MuJoCo assets.
-- Root and wheel distributions include the MIT license.
-- Native Monte Carlo manifests record clean/dirty source state and an exact
-  validation-source SHA-256. Release campaigns refuse a dirty Git tree by
-  default and verify the snapshot again on resume.
-
-## Release gates
+## 1. Automated gates
 
 Run from `2.Code/`:
 
@@ -41,6 +25,13 @@ uv run python scripts/smoke_native_panel.py
 uv run python -m build
 ```
 
+Before a new version, bump `EXPECTED_VERSION` in `scripts/release_check.py`
+and the version in `pyproject.toml`, add a `## <version>` heading to
+`CHANGELOG.md` (the release check requires it) and update the validation table
+in the root README.
+
+## 2. Installed wheel
+
 Validate the installed wheel outside the source checkout:
 
 ```bash
@@ -51,7 +42,10 @@ cd /tmp
 /tmp/quadrotor-wheel-test/bin/quadrotor-mpc-monte-carlo --validate-config
 ```
 
-Run the 50-seed release campaign only after committing the intended source:
+## 3. Release campaign
+
+Run the 50-seed campaign only after committing the intended source (see
+[Monte Carlo campaigns](monte-carlo.md#source-provenance)):
 
 ```bash
 uv run quadrotor-mpc-monte-carlo \
@@ -73,7 +67,7 @@ through its snapshot hash, while editable distributions and unverified loose
 source trees are also explicitly non-release-eligible. Native MJCF/OBJ model
 files are included in the validation-source fingerprint.
 
-## Manual desktop acceptance
+## 4. Manual desktop acceptance
 
 Automated CI verifies that the Qt safety panel can be constructed, updated,
 reset and closed. Before creating the GitHub release, perform one native Linux
@@ -90,16 +84,15 @@ desktop session and check:
 This manual check is a release acceptance test, not a new scientific
 validation claim.
 
-## Tagging
+## 5. Tagging
 
 After CI and the manual desktop acceptance pass on the committed release
 revision:
 
 ```bash
-git tag -a v2.0.1 -m "quadrotor MPC research workbench v2.0.1"
-git push origin v2.0.1
+git tag -a vX.Y.Z -m "quadrotor MPC research workbench vX.Y.Z"   # version from pyproject.toml
+git push origin vX.Y.Z
 ```
 
 Attach the source archive, validation report and checksum to the GitHub
-Release. Tagging and publication are intentionally performed only after the
-user reviews and commits the stabilization changes.
+Release. Tag only after the release changes have been reviewed and committed.

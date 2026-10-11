@@ -1,16 +1,28 @@
-# Native Spherical Chance Constraints
+# 4 · Chance constraints
 
-## Scope
+> **In short:** "the probability of hitting obstacle *o* at node *k* is at
+> most ε" is replaced by a deterministic distance constraint whose radius grows
+> with the projected uncertainty: `r_tight = r_base + Φ⁻¹(1-ε)·σ`. After the
+> solve, the result is re-checked and given a risk certificate. (Stage 4.)
+>
+> **Before this:** [covariance propagation](covariance-propagation.md) ·
+> **Next:** [risk budget](risk-budget.md) · **Code:**
+> `quadrotor_mpc/control/nmpc/chance_constraints.py`,
+> `quadrotor_mpc/control/nmpc/chance_constrained.py`
 
-Stage 4 adds Gaussian spherical chance constraints to the native quaternion
-NMPC. It supports spherical obstacles only. Covariance propagation remains
-outside the do-mpc nonlinear program, and the deterministic controller remains
-available with the same plant, estimator and seed.
+The native controller supports spherical obstacles only. Covariance
+propagation stays outside the do-mpc nonlinear program, and the deterministic
+controller remains available with the same plant, estimator and seed. How ε is
+chosen per cell is the job of the [risk budget](risk-budget.md); what happens
+when a solution needs slack is decided by the
+[safety supervisor](safety-fallback.md).
 
-Stage 5 adds individual-versus-joint semantics and uniform horizon allocation.
-See `RISK_BUDGET_MANAGEMENT.md`. Stage 6 applies solver, slack and timing gates
-plus a bounded fallback hierarchy after this optimization; see
-`SAFE_SLACK_FALLBACK.md`.
+![Keep-out radius along the horizon for the three controllers](../../../assets/readme/tightening.png)
+
+*Required distance to the static gate along the 20-node horizon in one tick of
+`mujoco_native_ccmpc.yaml`: fixed for the deterministic controller, growing
+with propagated uncertainty for individual risk, and growing further for joint
+risk, which spends a smaller ε per cell.*
 
 ## Constraint
 
@@ -120,7 +132,8 @@ MUJOCO_GL=glfw quadrotor-mpc-native \
   require positive slack. The chance guarantee is not satisfied.
 - `SOLVED_DETERMINISTIC`: chance tightening is disabled.
 
-Fallback and emergency statuses are not implemented through Stage 5.
+Fallback and emergency handling happen after the solve, in the
+[safety supervisor](safety-fallback.md).
 
 ## Assumptions and limitations
 
@@ -166,3 +179,18 @@ median 0.1–0.4 mm, max ~11 mm; node 0 never carried slack. The horizon risk
 sum stayed far below the budget (median 0.002–0.004, max 0.05 vs 0.10).
 A direction-robust tightening (\(\sigma_{\max}\)) would remove these cells but
 adds up to 74 mm of radius (p95 14 mm), so the certificate was preferred.
+
+## 9-state ODE track: ellipsoidal residual
+
+The ODE track uses rotated ellipsoids instead of spheres. With
+`S = Omega^(1/2)`, `y = S(p - p_obs)` and `n = y / ||y||`, the logged residual
+is
+
+```text
+g = ||y|| - 1 - Phi^-1(1-delta) * sqrt(n' S (Sigma + Sigma_obs) S' n)
+```
+
+`g >= 0` is locally safe under the Gaussian approximation. A nonzero soft slack
+must always be reported: it means the optimization stayed numerically usable
+but the hard probability statement was relaxed. Code:
+`quadrotor_mpc/control/ccmpc/risk.py`.

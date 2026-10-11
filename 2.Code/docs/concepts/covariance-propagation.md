@@ -1,9 +1,16 @@
-# Native horizon covariance propagation
+# 3 · Covariance propagation
 
-Stage 3 propagates the posterior beliefs produced by Stage 2 over every point
-of the native NMPC prediction horizon. It does not yet change the NMPC
-constraint; the resulting covariance is evidence and the input to Stage 4
-chance-constraint tightening.
+> **In short:** the current covariances from the estimators are pushed forward
+> along the optimized nominal trajectory, node by node, for the vehicle and for
+> every obstacle. Uncertainty grows with the look-ahead time, and the next
+> step turns it into larger keep-out radii. (Stage 3.)
+>
+> **Before this:** [sensing and estimation](estimation.md) · **Next:**
+> [chance constraints](chance-constraints.md) · **Code:**
+> `quadrotor_mpc/control/nmpc/covariance.py`
+
+Propagation on its own does not change the NMPC constraint; it produces the
+covariance horizons that [chance constraints](chance-constraints.md) consume.
 
 ## State conventions
 
@@ -46,7 +53,7 @@ B_d[k] = dt B_cont[k]
 ```
 
 The attitude blocks follow the right-multiplicative quaternion error used by
-Stage 2. No redundant 13x13 quaternion covariance is introduced. A slower RK4
+the [estimator](estimation.md). No redundant 13x13 quaternion covariance is introduced. A slower RK4
 finite-difference linearization remains available as a verification mode.
 
 Open-loop mode uses:
@@ -89,7 +96,8 @@ the controller.
 
 ## Configuration
 
-Stage 3 is enabled in `config/mujoco_native_estimation.yaml`:
+Propagation is enabled in `config/mujoco_native_estimation.yaml` and
+`config/mujoco_native_ccmpc.yaml`:
 
 ```yaml
 controller:
@@ -104,8 +112,8 @@ controller:
     minimum_covariance_eigenvalue: 1.0e-12
 ```
 
-The exact deterministic scenarios explicitly keep propagation disabled to
-preserve their Stage 1 regression schema and zero-covariance baseline.
+The exact deterministic scenarios keep propagation disabled to preserve their
+zero-covariance regression baseline.
 
 ## Runtime and recording shapes
 
@@ -124,8 +132,7 @@ predicted_obstacle_covariance_horizon
 
 Telemetry also exposes terminal and maximum position standard deviations over
 the horizon. The native safety plot shows the largest terminal-axis position
-sigma as a dashed curve. Replay accepts both Stage 3 recordings and older
-bundles that do not contain these arrays.
+sigma as a dashed curve. Replay also accepts older recordings that do not contain these arrays.
 
 ## Numerical safeguards and validation
 
@@ -141,7 +148,7 @@ minimum eigenvalue. Tests verify:
 - feedback-aware propagation differs from open-loop and remains PSD;
 - configuration and numeric recording round trips.
 
-Stage 3 does not establish a collision-probability guarantee. Stage 4 must
-combine the vehicle position covariance and obstacle position covariance,
-project relative uncertainty onto the collision normal, allocate risk and
-actually tighten the native NMPC constraint.
+Propagation alone establishes no collision-probability statement. The
+[chance constraints](chance-constraints.md) combine vehicle and obstacle
+position covariance, project it onto the collision normal, allocate risk and
+tighten the NMPC constraint.

@@ -1,9 +1,17 @@
-# Desktop safety interface
+# Desktop safety panel
 
-Stage 7 connects the belief-based CC-MPC, joint-risk accounting and Stage 6
-safety supervisor to the existing native desktop interface. It changes only
-presentation and visualization; controller, estimator, risk allocation,
-acceptance gates and applied commands remain unchanged.
+> **In short:** the Qt panel next to the MuJoCo window shows six status cards,
+> bounded plots and a transition log. It only *displays* telemetry; it can
+> never change a command. (Stage 7.)
+>
+> **Related:** [native simulation](../guides/native-simulation.md),
+> [safety supervisor](../concepts/safety-fallback.md) · **Code:**
+> `quadrotor_mpc/interfaces/desktop/model.py`, `quadrotor_mpc/interfaces/desktop/panel.py`
+
+This is the safety console of the 3-D viewer, not the
+[desktop workbench](../getting-started/workbench.md). It changes only
+presentation; controller, estimator, risk allocation, acceptance gates and
+applied commands are unaffected.
 
 ## Safety boundary
 

@@ -1,9 +1,14 @@
-# Safe slack acceptance and fallback
+# 6 · Safety supervisor and fallback
 
-Stage 6 adds an explicit safety supervisor between the primary NMPC controller
-and the MuJoCo plant. The optimizer proposes a command; the supervisor decides
-whether that command is fresh, numerically valid and acceptable under the
-configured degraded-slack policy.
+> **In short:** the optimizer only *proposes* a command. The supervisor checks
+> solver success, residuals, risk accounting, actuator bounds, slack and timing;
+> if any check fails it applies a bounded fallback instead (hold last command →
+> position hold → emergency hover) and records why. (Stage 6.)
+>
+> **Before this:** [risk budget](risk-budget.md) · **Next:** run it in
+> [native simulation](../guides/native-simulation.md) or measure it with
+> [Monte Carlo campaigns](../guides/monte-carlo.md) · **Code:**
+> `quadrotor_mpc/control/nmpc/safety.py`
 
 This layer does not prove collision avoidance. It prevents known-invalid or
 stale optimizer output from being applied silently and records every degraded
@@ -144,12 +149,18 @@ controller:
     emergency_after_consecutive_rejections: 20
 ```
 
-The supplied CC-MPC scenario enables the supervisor. Legacy deterministic and
-estimator-only configurations omit the block and remain unchanged.
+The values above are the code defaults. The supplied CC-MPC scenario enables
+the supervisor with `reject_on_deadline_miss: false`: the solver is not yet
+fast enough for 20 Hz, so late but valid solutions are applied and recorded as
+deadline misses instead of being rejected. Strict timing experiments set it to
+`true`. In Monte Carlo the value is derived from the protocol type (see
+[Monte Carlo campaigns](../guides/monte-carlo.md#protocol-types)). Legacy
+deterministic and estimator-only configurations omit the block and remain
+unchanged.
 
 ## Acceptance tests
 
-Stage 6 tests inject:
+The supervisor tests inject:
 
 - backend `success=false`;
 - a solver exception;

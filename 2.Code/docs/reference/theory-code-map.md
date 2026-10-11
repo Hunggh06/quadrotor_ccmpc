@@ -1,4 +1,11 @@
-# Theory-to-code mapping
+# Theory-to-code map
+
+> **In short:** where each equation of the 9-state ODE track is implemented,
+> which test checks it and which output would expose a wrong implementation.
+> For the native track, each [concept page](../README.md#reading-paths) names
+> its code module.
+>
+> **Background:** [theory chapters](../../../1.Docs/Theory/README.md)
 
 | Theory | Implementation | Test | Observable evidence |
 |---|---|---|---|

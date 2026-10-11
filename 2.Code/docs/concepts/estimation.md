@@ -1,8 +1,16 @@
-# Native sensor simulation and estimation
+# 2 · Sensing and estimation
 
-Stage 2 replaces the native controller's perfect-information input with a
-seeded measurement and estimation pipeline while preserving the deterministic
-baseline as an explicit configuration choice.
+> **In short:** MuJoCo truth is passed through seeded noisy sensors; a 12D
+> error-state EKF estimates the vehicle and one Kalman filter per obstacle
+> estimates its position and velocity. The controller only ever sees these
+> estimates and their covariance. (Stage 2.)
+>
+> **Before this:** [model conventions](conventions.md) · **Next:**
+> [covariance propagation](covariance-propagation.md) · **Code:**
+> `quadrotor_mpc/estimation/native.py`
+
+Setting `estimation.enabled: false` keeps the exact-truth deterministic
+baseline (`quadrotor_mpc/estimation/truth.py`).
 
 ## Runtime boundary
 
@@ -65,7 +73,7 @@ Only world-frame position is measured. Velocity is inferred over time. The
 mean obstacle horizon supplied to the controller is extrapolated from the
 tracker state; it is not copied from the configured truth motion.
 
-Data association, false positives, births and deaths are outside Stage 2. The
+Data association, false positives, births and deaths are not modelled. The
 simulator preserves obstacle identity so this stage isolates state-estimation
 and covariance behavior.
 
@@ -92,7 +100,7 @@ that generated it.
 
 ## Configuration
 
-Use the estimated dynamic scenario:
+Run the estimated dynamic scenario:
 
 ```bash
 MUJOCO_GL=glfw quadrotor-mpc-native \
@@ -142,11 +150,10 @@ The native result and compressed trajectory include:
 - vehicle and per-obstacle measurement availability.
 
 Truth and estimated states are recorded separately. Replay remains backward
-compatible with Stage 1 bundles.
+compatible with recordings made before estimation existed.
 
-## Stage boundary
+## What comes next
 
-Stage 2 produces calibrated current-time beliefs. Stage 3 consumes these
-posterior covariances in `quadrotor_mpc/control/nmpc/covariance.py` and propagates vehicle and
-obstacle uncertainty across the controller horizon. See
-`HORIZON_COVARIANCE_PROPAGATION.md`.
+The estimators produce calibrated *current-time* beliefs. The next step,
+[covariance propagation](covariance-propagation.md), predicts how this
+uncertainty grows over the controller horizon.

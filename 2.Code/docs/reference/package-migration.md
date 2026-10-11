@@ -1,8 +1,13 @@
-# Layered Package Migration
+# Package migration
 
-The refactor after commit `e75d0f3` changes Python import paths without changing
-the six public console commands, YAML schemas, runtime behavior or validation
-semantics.
+> **In short:** old flat module names and their location in the layered
+> `quadrotor_mpc` package. Only needed when reading old code or notebooks.
+>
+> **Related:** [architecture](architecture.md)
+
+The refactor after commit `e75d0f3` changed Python import paths without
+changing the public console commands, YAML schemas, runtime behavior or
+validation semantics.
 
 ## Import mapping
 
@@ -39,7 +44,8 @@ from quadrotor_mpc.control.nmpc.deterministic import DeterministicNMPCController
 
 ## Stable console interface
 
-The following commands are unchanged:
+The following commands were unchanged by the refactor
+(`quadrotor-mpc-app` was added later):
 
 ```text
 quadrotor-mpc-run

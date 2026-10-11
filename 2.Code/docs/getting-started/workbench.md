@@ -1,7 +1,13 @@
 # Desktop workbench
 
-`quadrotor-mpc-app` is a single dark Qt window that replaces the common
-terminal workflow for the native NMPC track.
+> **In short:** `quadrotor-mpc-app` is one Qt window for the native track: run
+> an episode, run a Monte Carlo campaign, browse and compare results.
+>
+> **Before this:** [installation](installation.md) · **Related:**
+> [native simulation](../guides/native-simulation.md),
+> [Monte Carlo campaigns](../guides/monte-carlo.md).
+
+![Results page comparing three controllers](../../../assets/readme/workbench-results-compare.png)
 
 ```bash
 cd 2.Code
@@ -27,7 +33,7 @@ tree require the **Allow uncommitted source** box (`--allow-dirty-source`).
 
 ## Headless CLI
 
-The same mode is available without the GUI:
+Every page runs a command you can also type yourself:
 
 ```bash
 uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml \
