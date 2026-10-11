@@ -29,46 +29,39 @@ from quadrotor_mpc.interfaces.desktop.model import (
 # ΔE pass, hues preserved, Okabe-Ito color-blind-safe series).
 PALETTE = {
     # ── Surfaces ──────────────────────────────────────────────────────
-    "surface":            "#f8f9fa",   # main panel background
-    "surface_elevated":   "#ffffff",   # cards, elevated panels
-    "surface_inset":      "#e8eaed",   # inset / recessed areas (darker)
-    "surface_hover":      "#f1f3f4",   # hover bg for list items, rows
-
+    "surface": "#f8f9fa",  # main panel background
+    "surface_elevated": "#ffffff",  # cards, elevated panels
+    "surface_inset": "#e8eaed",  # inset / recessed areas (darker)
+    "surface_hover": "#f1f3f4",  # hover bg for list items, rows
     # ── Text on surface ───────────────────────────────────────────────
-    "on_surface":         "#1a1a1a",   # primary text (highest contrast)
-    "on_surface_muted":   "#5f6368",   # secondary text
-    "on_surface_dim":     "#5b6166",   # tertiary text (still ≥4.5:1 on all surfaces)
-
+    "on_surface": "#1a1a1a",  # primary text (highest contrast)
+    "on_surface_muted": "#5f6368",  # secondary text
+    "on_surface_dim": "#5b6166",  # tertiary text (still ≥4.5:1 on all surfaces)
     # ── Interactive ────────────────────────────────────────────────────
-    "interactive":          "#1558c0", # blue accent — links, focus, plot pens
-    "interactive_hover":    "#e8f0fe", # light-blue hover bg for interactive elems
-    "interactive_secondary": "#f1f3f4", # secondary button bg (light gray)
-    "interactive_focus":    "#1558c0", # focus-ring outline color
-
+    "interactive": "#1558c0",  # blue accent — links, focus, plot pens
+    "interactive_hover": "#e8f0fe",  # light-blue hover bg for interactive elems
+    "interactive_secondary": "#f1f3f4",  # secondary button bg (light gray)
+    "interactive_focus": "#1558c0",  # focus-ring outline color
     # ── Borders (non-text, ≥3:1) ──────────────────────────────────────
-    "border":             "#80868b",  # general UI border
-    "button_border":      "#80868b",  # button border
-
+    "border": "#80868b",  # general UI border
+    "button_border": "#80868b",  # button border
     # ── Buttons (white text on colored bg, ≥4.5:1) ───────────────────
-    "button_ok":          "#137333",  # green — white text passes 4.5:1
-    "button_danger":      "#c5221f",  # red — white text passes 4.5:1
-
+    "button_ok": "#137333",  # green — white text passes 4.5:1
+    "button_danger": "#c5221f",  # red — white text passes 4.5:1
     # ── Semantic tones (bg, fg) — fg ≥4.5:1 on bg ────────────────────
-    "tone_ok":      ("#e6f4ea", "#137333"),   # light-green bg, green fg
-    "tone_info":    ("#e8f0fe", "#1558c0"),    # light-blue bg, blue fg
-    "tone_warning": ("#fef7e0", "#b45309"),   # light-amber bg, amber fg
-    "tone_danger":  ("#fce8e6", "#c5221f"),   # light-red bg, red fg
-    "tone_muted":   ("#f1f3f4", "#5f6368"),    # light-gray bg, gray fg
-
+    "tone_ok": ("#e6f4ea", "#137333"),  # light-green bg, green fg
+    "tone_info": ("#e8f0fe", "#1558c0"),  # light-blue bg, blue fg
+    "tone_warning": ("#fef7e0", "#b45309"),  # light-amber bg, amber fg
+    "tone_danger": ("#fce8e6", "#c5221f"),  # light-red bg, red fg
+    "tone_muted": ("#f1f3f4", "#5f6368"),  # light-gray bg, gray fg
     # ── Badges & status ───────────────────────────────────────────────
-    "badge_bg":           "#e8eaed",   # badge / chip background
-    "status_bg":          "#f1f3f4",   # status-banner background
-    "label_title":        "#202124",   # card-title label (dark, prominent)
-
+    "badge_bg": "#e8eaed",  # badge / chip background
+    "status_bg": "#f1f3f4",  # status-banner background
+    "label_title": "#202124",  # card-title label (dark, prominent)
     # ── Plot series (Okabe-Ito color-blind-safe) ──────────────────────
-    "series_purple":      "#CC79A7",   # Okabe-Ito "reddish purple"
-    "series_cyan":        "#56B4E9",   # Okabe-Ito "sky blue"
-    "series_orange":      "#E69F00",   # Okabe-Ito "orange"
+    "series_purple": "#CC79A7",  # Okabe-Ito "reddish purple"
+    "series_cyan": "#56B4E9",  # Okabe-Ito "sky blue"
+    "series_orange": "#E69F00",  # Okabe-Ito "orange"
 }
 
 # ── Modular typography scale ──────────────────────────────────────────────
@@ -82,9 +75,9 @@ PALETTE = {
 # respects Qt's default DPI scaling — do NOT use pt (would mis-scale on HiDPI).
 TYPE_SCALE = {
     "caption": 13,  # ms(-1)
-    "body": 16,     # ms( 0)
-    "value": 19,    # ms(+1)
-    "title": 23,    # ms(+2)
+    "body": 16,  # ms( 0)
+    "value": 19,  # ms(+1)
+    "title": 23,  # ms(+2)
 }
 
 
@@ -318,9 +311,7 @@ def _panel_main(
                 QtWidgets.QSizePolicy.Policy.Fixed,
                 QtWidgets.QSizePolicy.Policy.Expanding,
             )
-            group_separator.setStyleSheet(
-                f"QFrame{{background:{PALETTE['border']};border:none;}}"
-            )
+            group_separator.setStyleSheet(f"QFrame{{background:{PALETTE['border']};border:none;}}")
             controls.addWidget(group_separator)
             controls.addStretch(1)
             for label, name in (
@@ -467,11 +458,15 @@ def _panel_main(
             layout.setContentsMargins(10, 7, 10, 7)
             layout.setSpacing(2)
             title_label = QtWidgets.QLabel(title_text)
-            title_label.setStyleSheet(f"color:{PALETTE['label_title']};font-size:{TYPE_SCALE['caption']}px")
+            title_label.setStyleSheet(
+                f"color:{PALETTE['label_title']};font-size:{TYPE_SCALE['caption']}px"
+            )
             value_label = QtWidgets.QLabel("WAITING")
             value_label.setStyleSheet(f"font-size:{TYPE_SCALE['value']}px;font-weight:bold")
             detail_label = QtWidgets.QLabel("No telemetry")
-            detail_label.setStyleSheet(f"color:{PALETTE['on_surface_muted']};font-size:{TYPE_SCALE['caption']}px")
+            detail_label.setStyleSheet(
+                f"color:{PALETTE['on_surface_muted']};font-size:{TYPE_SCALE['caption']}px"
+            )
             detail_label.setWordWrap(True)
             layout.addWidget(title_label)
             layout.addWidget(value_label)
@@ -529,7 +524,9 @@ def _panel_main(
                     "border-radius:6px}"
                 )
                 value.setText(card.value)
-                value.setStyleSheet(f"font-size:{TYPE_SCALE['value']}px;font-weight:bold;color:{foreground}")
+                value.setStyleSheet(
+                    f"font-size:{TYPE_SCALE['value']}px;font-weight:bold;color:{foreground}"
+                )
                 detail.setText(card.detail)
             background, foreground = colors[view.runtime_tone]
             self.status.setText(view.banner)

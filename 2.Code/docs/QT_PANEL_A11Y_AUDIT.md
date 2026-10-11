@@ -118,9 +118,7 @@ relative-luminance formula (IEC 61966-2-1 linearisation, sRGB).
 
 **Source:** `panel.py` line 381  
 ```python
-frame.setStyleSheet(
-    "QFrame{background:#171f2b;border:1px solid #26354a;border-radius:6px}"
-)
+frame.setStyleSheet("QFrame{background:#171f2b;border:1px solid #26354a;border-radius:6px}")
 ```
 
 **Issue:** `border:1px solid #26354a` creates a 1 px border on a `#171f2b`

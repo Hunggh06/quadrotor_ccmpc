@@ -73,7 +73,8 @@ These accept injected CSS via `unsafe_allow_html=True` and can be styled directl
 
 **KPI styling approach for dark theme:**
 ```python
-st.markdown("""
+st.markdown(
+    """
 <style>
 div[data-testid="stMetric"] {
     background: #1e1e3f !important;
@@ -91,7 +92,9 @@ div[data-testid="stMetricDelta"] {
     color: #00ff88 !important;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 ```
 
 ---

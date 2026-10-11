@@ -28,7 +28,9 @@ def test_home_page() -> None:
 
 
 def test_scenario_builder() -> None:
-    at = AppTest.from_file("quadrotor_mpc/interfaces/dashboard/pages/1_Scenario_Builder.py", default_timeout=30).run()
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/1_Scenario_Builder.py", default_timeout=30
+    ).run()
     assert not at.exception
     # 3 start + 3 goal + max_time + timestep + seed + 2 noise inputs + text
     assert len(at.number_input) >= 6
@@ -40,7 +42,9 @@ def test_scenario_builder() -> None:
 
 
 def test_live_simulation() -> None:
-    at = AppTest.from_file("quadrotor_mpc/interfaces/dashboard/pages/2_Live_Simulation.py", default_timeout=30).run()
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/2_Live_Simulation.py", default_timeout=30
+    ).run()
     assert not at.exception
     assert len(at.title) == 1
     assert len(at.sidebar.selectbox) >= 3
@@ -51,7 +55,9 @@ def test_live_simulation() -> None:
 
 
 def test_compare_controllers() -> None:
-    at = AppTest.from_file("quadrotor_mpc/interfaces/dashboard/pages/3_Compare_Controllers.py", default_timeout=30).run()
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/3_Compare_Controllers.py", default_timeout=30
+    ).run()
     assert not at.exception
     assert len(at.title) == 1
     assert len(at.sidebar.selectbox) >= 2
@@ -61,7 +67,9 @@ def test_compare_controllers() -> None:
 
 
 def test_monte_carlo() -> None:
-    at = AppTest.from_file("quadrotor_mpc/interfaces/dashboard/pages/4_Monte_Carlo.py", default_timeout=30).run()
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/4_Monte_Carlo.py", default_timeout=30
+    ).run()
     assert not at.exception
     assert len(at.title) == 1
     assert len(at.sidebar.multiselect) >= 1
@@ -71,20 +79,38 @@ def test_monte_carlo() -> None:
     assert len(at.sidebar.number_input) >= 1
 
 
-def test_experiment_explorer() -> None:
-    # The page calls st.stop() when no tracked runs exist. st.stop() is not an
-    # exception, so at.exception stays None and the smoke assertion holds.
-    # NOTE: a prior wave confirmed a run exists in outputs/runs, so content renders.
-    at = AppTest.from_file("quadrotor_mpc/interfaces/dashboard/pages/5_Experiment_Explorer.py", default_timeout=30).run()
+def test_experiment_explorer_without_runs(tmp_path, monkeypatch) -> None:
+    # Hermetic: outputs/runs is gitignored, so never depend on a developer's runs.
+    monkeypatch.setenv("QUADROTOR_MPC_RUNS_ROOT", str(tmp_path / "missing"))
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/5_Experiment_Explorer.py", default_timeout=30
+    ).run()
+    assert not at.exception
+    assert len(at.title) == 1
+    assert len(at.info) == 1  # "No tracked experiments yet" hint
+    assert len(at.selectbox) == 0
+
+
+def test_experiment_explorer(tmp_path, monkeypatch) -> None:
+    run = tmp_path / "20260101T000000Z-fixture"
+    run.mkdir()
+    (run / "manifest.yaml").write_text("run_id: fixture\nscenario: hover\n", encoding="utf-8")
+    (run / "metrics.json").write_text('{"ccmpc": {"success_rate": 1.0}}', encoding="utf-8")
+    monkeypatch.setenv("QUADROTOR_MPC_RUNS_ROOT", str(tmp_path))
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/5_Experiment_Explorer.py", default_timeout=30
+    ).run()
     assert not at.exception
     assert len(at.title) == 1
     # Structural: run selector + manifest/metrics JSON panels present
     assert len(at.selectbox) >= 1
-    assert len(at.json) >= 1
+    assert len(at.json) >= 2
 
 
 def test_theory_mode() -> None:
-    at = AppTest.from_file("quadrotor_mpc/interfaces/dashboard/pages/6_Theory_Mode.py", default_timeout=30).run()
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/6_Theory_Mode.py", default_timeout=30
+    ).run()
     assert not at.exception
     assert len(at.title) == 1
     assert len(at.table) >= 1
@@ -96,7 +122,9 @@ def test_theory_mode() -> None:
 def test_nmpc_mujoco() -> None:
     # Guarded optional dependency: missing ModuleNotFoundError deps surface as
     # st.error + st.stop (no exception) rather than a crash.
-    at = AppTest.from_file("quadrotor_mpc/interfaces/dashboard/pages/7_NMPC_MuJoCo.py", default_timeout=30).run()
+    at = AppTest.from_file(
+        "quadrotor_mpc/interfaces/dashboard/pages/7_NMPC_MuJoCo.py", default_timeout=30
+    ).run()
     assert not at.exception
     assert len(at.title) == 1
     assert len(at.sidebar.number_input) >= 6

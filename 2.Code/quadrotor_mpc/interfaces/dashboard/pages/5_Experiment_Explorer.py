@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -14,7 +16,9 @@ from quadrotor_mpc.interfaces.dashboard.common import DATA_ROOT
 st.set_page_config(page_title="Experiment Explorer", page_icon="🗂️", layout="wide")
 theme.apply_theme(st)
 st.title("Experiment Explorer")
-runs_root = DATA_ROOT / "outputs/runs"
+# QUADROTOR_MPC_RUNS_ROOT lets tests and non-default installs point the
+# explorer at another tracked-runs directory without touching user outputs.
+runs_root = Path(os.environ.get("QUADROTOR_MPC_RUNS_ROOT", DATA_ROOT / "outputs/runs"))
 runs = (
     sorted((path for path in runs_root.glob("*") if path.is_dir()), reverse=True)
     if runs_root.exists()
