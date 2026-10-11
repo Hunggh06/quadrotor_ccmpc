@@ -16,6 +16,13 @@
 - Results comparison colours runs by controller (blue deterministic, orange
   individual, aqua joint) instead of selection order; repeated controllers
   use dashed/dotted lines.
+- Documentation reorganized for newcomers under `docs/` (start at
+  `docs/README.md`): `getting-started/`, numbered `concepts/` pages in data-flow
+  order, task `guides/`, `reference/`, `validation/` and `archive/`. Stage
+  numbers are mapped in `concepts/overview.md` with a glossary. Stale text
+  fixed: metrics timing gate (worst trial) and collision bound, controller
+  output table, Monte Carlo claim/validation statuses and protocol types.
+  `2.Code/README.md` is now a short entry page.
 - Root README rewritten with figures generated from real runs
   (`assets/readme/`): MuJoCo flight GIF, horizon tightening, controller
   comparison, workbench GIF and screenshots.

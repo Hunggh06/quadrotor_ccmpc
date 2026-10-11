@@ -3,7 +3,7 @@
 Provides:
   - PALETTE: colour constants matching the Qt desktop panel.
   - apply_theme(st): injects a scoped <style> block for CSS-penetrable
-    components (probe-verified in docs/UI_CSS_PROBE.md).
+    components (probe-verified in docs/archive/streamlit-css-probe.md).
   - register_dashboard_plotly_theme(): builds and registers a dark Plotly
     template ("taste_dark") for dashboard charts only.  CLI report modules
     (quadrotor_mpc.reporting.*) are never modified — the template is set at

@@ -8,7 +8,7 @@ on estimated, uncertain state.**
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Validation](https://img.shields.io/badge/validation-with%20limitations-orange)](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md)
+[![Validation](https://img.shields.io/badge/validation-with%20limitations-orange)](2.Code/docs/validation/claims-and-statistics.md)
 
 <img src="assets/readme/flight.gif" width="820" alt="MuJoCo Crazyflie 2 flying past a static gate and two moving obstacles; the blue trail is the flown path, green dots are the NMPC prediction horizon and orange lines are the predicted obstacle motion">
 
@@ -143,7 +143,7 @@ freezes the window.
 
 On Windows, double-click **`Quadrotor MPC Workbench.bat`** at the repository
 root. Elsewhere, run `cd 2.Code && uv run quadrotor-mpc-app`. See the
-[workbench guide](2.Code/docs/WORKBENCH.md).
+[workbench guide](2.Code/docs/getting-started/workbench.md).
 
 ## Installation
 
@@ -260,7 +260,7 @@ controller/noise cell:
 
 The result is therefore `VALIDATED_WITH_LIMITATIONS`. Zero observed collisions
 must not be presented as a formal probabilistic guarantee. See the
-[native validation protocol](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md) and
+[claim rules](2.Code/docs/validation/claims-and-statistics.md) and
 [raw evidence](2.Code/validation/stage8_30_seed/).
 
 <details>
@@ -283,7 +283,7 @@ quadrotor_mpc/
 │   ├── models/          sourced MuJoCo model and license
 │   ├── tests/           unit, integration and release tests
 │   ├── validation/      committed validation evidence
-│   └── docs/            architecture, protocol and limitations
+│   └── docs/            documentation (start at docs/README.md)
 ├── 3.Notebooks/         learning and formulation notebooks
 ├── assets/readme/       figures used by this README
 ├── Quadrotor MPC Workbench.bat
@@ -306,18 +306,17 @@ of the current release.
 
 ## Documentation
 
-| Topic | Document |
+Start at the **[documentation index](2.Code/docs/README.md)**: it has reading
+paths for newcomers, controller internals, experiments and code changes.
+
+| If you want to | Read |
 |---|---|
-| Code workbench guide | [2.Code/README.md](2.Code/README.md) |
-| Desktop workbench | [WORKBENCH.md](2.Code/docs/WORKBENCH.md) |
-| Architecture | [ARCHITECTURE.md](2.Code/docs/ARCHITECTURE.md) |
-| Layered package migration | [LAYERED_PACKAGE_MIGRATION.md](2.Code/docs/LAYERED_PACKAGE_MIGRATION.md) |
-| Model conventions | [MODEL_CONVENTIONS.md](2.Code/docs/MODEL_CONVENTIONS.md) |
-| Safety fallback | [SAFE_SLACK_FALLBACK.md](2.Code/docs/SAFE_SLACK_FALLBACK.md) |
-| Desktop safety interface | [DESKTOP_SAFETY_INTERFACE.md](2.Code/docs/DESKTOP_SAFETY_INTERFACE.md) |
-| Native Monte Carlo validation | [NATIVE_MONTE_CARLO_VALIDATION.md](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md) |
-| Release stabilization | [RELEASE_2_0_1.md](2.Code/docs/RELEASE_2_0_1.md) |
-| Theory map | [1.Docs/Theory/README.md](1.Docs/Theory/README.md) |
+| Install and fly a first episode | [Installation](2.Code/docs/getting-started/installation.md) · [First run](2.Code/docs/getting-started/first-run.md) |
+| Understand the pipeline and its vocabulary | [Overview](2.Code/docs/concepts/overview.md), then the numbered concept pages |
+| Run experiments | [Native simulation](2.Code/docs/guides/native-simulation.md) · [Monte Carlo campaigns](2.Code/docs/guides/monte-carlo.md) · [ODE experiments](2.Code/docs/guides/ode-experiments.md) |
+| Know what a result may claim | [Claims and statistics](2.Code/docs/validation/claims-and-statistics.md) |
+| Change the code | [Architecture](2.Code/docs/reference/architecture.md) · [Controller interface](2.Code/docs/reference/controller-interface.md) |
+| Read the theory | [Theory chapters](1.Docs/Theory/README.md) |
 
 ## References
 

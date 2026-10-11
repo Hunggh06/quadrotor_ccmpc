@@ -27,5 +27,5 @@ not contain the code that generated it.
   collision bound, `real_time_p99` = p95 across trials of per-trial p99,
   chance constraints applied to horizon nodes 0..N-1). The current code uses a
   one-sided Clopper–Pearson bound, a worst-trial timing gate and constraints on
-  the controllable nodes 1..N (see `docs/NATIVE_MONTE_CARLO_VALIDATION.md`), so
+  the controllable nodes 1..N (see `docs/validation/claims-and-statistics.md`), so
   the historical aggregate must not be compared gate-for-gate with new runs.
