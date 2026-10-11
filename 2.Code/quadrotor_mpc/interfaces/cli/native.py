@@ -53,6 +53,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="replay a native recording without solving NMPC",
     )
     parser.add_argument(
+        "--mode",
+        choices=("deterministic", "individual", "joint_uniform"),
+        help="override the controller mode (same transformation as Monte Carlo trials)",
+    )
+    parser.add_argument(
+        "--noise-scale",
+        type=float,
+        help="covariance multiplier for sensor/filter/propagation noise (1.0 = nominal)",
+    )
+    parser.add_argument("--seed", type=int, help="override the estimation random seed")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="run without the MuJoCo window or panel (records unless --no-record)",
+    )
+    parser.add_argument(
+        "--progress-json",
+        action="store_true",
+        help="with --headless, print one machine-readable progress line per tick",
+    )
+    parser.add_argument(
         "--validate-config",
         action="store_true",
         help="validate YAML and exit without importing MuJoCo",
@@ -80,6 +101,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.duration <= 0.0:
             raise SystemExit("--duration must be > 0")
         config = replace(config, duration_s=float(args.duration))
+    if args.noise_scale is not None and args.noise_scale <= 0.0:
+        raise SystemExit("--noise-scale must be > 0")
+    if recording is None and (
+        args.mode is not None or args.noise_scale is not None or args.seed is not None
+    ):
+        from quadrotor_mpc.application.native.headless import apply_run_overrides
+
+        config = apply_run_overrides(
+            config, mode=args.mode, noise_scale=args.noise_scale, seed=args.seed
+        )
 
     viewer = config.viewer
     if args.realtime_factor is not None:
@@ -105,6 +136,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.validate_config:
         print("configuration is valid")
         return 0
+
+    if args.headless:
+        if recording is not None:
+            raise SystemExit("--headless cannot be combined with --replay")
+        return _run_headless(config, record=not args.no_record, progress=args.progress_json)
 
     panel_enabled = config.panel.enabled and not args.no_panel
     if panel_enabled:
@@ -178,6 +214,55 @@ def main(argv: list[str] | None = None) -> int:
     print(f"termination:    {result['termination_reason']}")
     if recording_path is not None:
         print(f"recording:      {recording_path}")
+    return 0
+
+
+def _run_headless(config: NativeMuJoCoConfig, *, record: bool, progress: bool) -> int:
+    from quadrotor_mpc.application.native.headless import (
+        HeadlessRecordingRuntime,
+        progress_line,
+        result_line,
+    )
+    from quadrotor_mpc.application.native.runtime import run_coupled_simulation
+
+    total_steps = int(config.duration_s / config.mpc_timestep_s)
+    counter = {"step": 0}
+
+    def on_sample(sample: dict) -> None:
+        counter["step"] += 1
+        if progress:
+            print(progress_line(sample, total_steps, counter["step"]), flush=True)
+
+    runtime = HeadlessRecordingRuntime(
+        config, base_dir=Path.cwd(), enable_recording=record, on_sample=on_sample
+    )
+    result = run_coupled_simulation(
+        x0_vals=config.start,
+        goal_pos=config.goal_position,
+        goal_euler=config.goal_euler,
+        bounds=config.bounds,
+        obstacles=[dict(item) for item in config.obstacles],
+        margin=config.safety_margin,
+        sim_seconds=config.duration_s,
+        mpc_dt=config.mpc_timestep_s,
+        n_horizon=config.horizon_steps,
+        max_iter=config.max_solver_iterations,
+        mj_dt=config.mujoco_timestep_s,
+        runtime=runtime,
+        stop_on_goal=config.stop_on_goal,
+        goal_tolerance=config.goal_tolerance_m,
+        stop_on_collision=config.stop_on_collision,
+        estimation_options=config.estimation,
+        covariance_options=config.covariance_propagation,
+        chance_options=config.chance_constraints,
+        safety_fallback_options=config.safety_fallback,
+    )
+    recording_path = runtime.finalize(result)
+    print(f"collision:      {result['collided']}")
+    print(f"termination:    {result['termination_reason']}")
+    if recording_path is not None:
+        print(f"recording:      {recording_path}")
+    print(result_line(result, recording_path), flush=True)
     return 0
 
 

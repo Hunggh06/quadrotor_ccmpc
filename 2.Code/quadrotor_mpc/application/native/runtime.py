@@ -501,6 +501,10 @@ def run_coupled_simulation(
                 continue
 
             if holding_reason is not None:
+                # Headless runtimes have no window to keep open after the run
+                # completes; exit while preserving the termination reason.
+                if getattr(runtime, "exit_on_completion", False):
+                    break
                 on_idle = getattr(runtime, "on_idle", None)
                 if on_idle is not None:
                     on_idle(True)

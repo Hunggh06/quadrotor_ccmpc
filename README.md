@@ -85,6 +85,11 @@ ODE baseline and headless Monte Carlo do not need a visible window.
 
 ## Quick start
 
+The fastest path is the desktop workbench: double-click
+`Quadrotor MPC Workbench.bat` (Windows) or run `cd 2.Code && uv run
+quadrotor-mpc-app`. It runs native NMPC simulations, Monte Carlo campaigns and
+compares results without terminal commands (`2.Code/docs/WORKBENCH.md`).
+
 Run a tracked paired ODE experiment:
 
 ```bash

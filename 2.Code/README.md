@@ -56,7 +56,16 @@ quadrotor-mpc-run \
   --compare --trials 10 --seed 100
 ```
 
-Open the workbench:
+Open the desktop workbench (native simulation, Monte Carlo campaigns and
+result comparison in one dark Qt window; see `docs/WORKBENCH.md`):
+
+```bash
+quadrotor-mpc-app
+```
+
+On Windows, double-click `Quadrotor MPC Workbench.bat` at the repository root.
+
+Open the ODE Streamlit workbench:
 
 ```bash
 quadrotor-mpc-dashboard

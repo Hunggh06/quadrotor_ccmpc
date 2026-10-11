@@ -914,6 +914,14 @@ class NativeRunRecorder:
                             "risk_budget_status",
                             "",
                         ),
+                        "achieved_risk_total": (
+                            ""
+                            if sample.get("achieved_risk_total") is None
+                            else float(sample["achieved_risk_total"])
+                        ),
+                        "risk_certificate_status": sample.get(
+                            "risk_certificate_status", "NOT_AVAILABLE"
+                        ),
                         "minimum_chance_residual_m": sample.get("minimum_chance_residual_m"),
                         "maximum_slack_m": sample.get("maximum_slack_m"),
                         "maximum_projected_uncertainty_m": sample.get(

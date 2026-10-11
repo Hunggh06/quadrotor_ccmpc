@@ -43,6 +43,7 @@ quadrotor-mpc-sweep = "quadrotor_mpc.interfaces.cli.sweep:main"
 quadrotor-mpc-native = "quadrotor_mpc.interfaces.cli.native:main"
 quadrotor-mpc-monte-carlo = "quadrotor_mpc.interfaces.cli.monte_carlo:main"
 quadrotor-mpc-dashboard = "quadrotor_mpc.interfaces.cli.dashboard:main"
+quadrotor-mpc-app = "quadrotor_mpc.interfaces.cli.app:main"
 
 [tool.setuptools]
 include-package-data = true

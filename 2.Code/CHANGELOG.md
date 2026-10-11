@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — Desktop workbench (October 2026)
+
+- New `quadrotor-mpc-app` (PySide6 + pyqtgraph, dark theme): Simulate (live
+  headless NMPC run with streaming trajectory, clearance, solve time, slack and
+  risk), Monte Carlo (protocol form, start/stop/resume, live trial table) and
+  Results (browse runs and campaigns, overlay up to three runs, campaign gates
+  and report). Jobs run out of process; closing the window stops them.
+  Windows launcher `Quadrotor MPC Workbench.bat` at the repository root.
+- `quadrotor-mpc-native --headless [--progress-json]` runs a native episode
+  without a window and exits on completion; `--mode`, `--noise-scale`, `--seed`
+  override the controller and disturbance from the command line.
+- `telemetry.csv` now records `achieved_risk_total` and
+  `risk_certificate_status` (columns previously empty).
+
 ## Unreleased — Correctness review (October 2026)
 
 Validation semantics changed; the committed Stage 8 artifact is historical and
