@@ -13,6 +13,12 @@
   override the controller and disturbance from the command line.
 - `telemetry.csv` now records `achieved_risk_total` and
   `risk_certificate_status` (columns previously empty).
+- Results comparison colours runs by controller (blue deterministic, orange
+  individual, aqua joint) instead of selection order; repeated controllers
+  use dashed/dotted lines.
+- Root README rewritten with figures generated from real runs
+  (`assets/readme/`): MuJoCo flight GIF, horizon tightening, controller
+  comparison, workbench GIF and screenshots.
 
 ## Unreleased — Correctness review (October 2026)
 

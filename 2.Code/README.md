@@ -65,6 +65,8 @@ quadrotor-mpc-app
 
 On Windows, double-click `Quadrotor MPC Workbench.bat` at the repository root.
 
+![Workbench comparing three controllers](../assets/readme/workbench-results-compare.png)
+
 Open the ODE Streamlit workbench:
 
 ```bash

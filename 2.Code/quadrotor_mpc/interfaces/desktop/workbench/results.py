@@ -47,10 +47,9 @@ from quadrotor_mpc.interfaces.desktop.workbench.widgets import (
     make_trajectory_plot,
     page_header,
     reference_line,
-    series_pen,
 )
 
-COMPARE_COLORS = (theme.SERIES[0], theme.SERIES[1], theme.SERIES[2])
+LINE_STYLES = (Qt.PenStyle.SolidLine, Qt.PenStyle.DashLine, Qt.PenStyle.DotLine)
 
 CLAIM_TEXT = {
     "EMPIRICALLY_SUPPORTED_NOT_PROVEN": ("Supported (empirical)", "good"),
@@ -336,25 +335,30 @@ class NativeRunView(QWidget):
         reference_line(self.solver, primary.control_period_ms, "period", theme.WARNING)
         if primary.risk_budget_total is not None:
             reference_line(self.risk, primary.risk_budget_total, "joint budget", theme.WARNING)
-        for index, run in enumerate(runs):
-            color = COMPARE_COLORS[index] if compare else _run_color(run)
+        # Colour follows the controller (never selection order); repeated
+        # controllers are told apart by line style.
+        seen: dict[str, int] = {}
+        for run in runs:
+            color = _run_color(run)
+            repeat = seen.get(color, 0)
+            seen[color] = repeat + 1
+            style = LINE_STYLES[repeat % len(LINE_STYLES)]
             label = (
                 f"{_semantics_label(str(run.summary.get('risk_semantics', '')))} · "
                 f"{_short_time(str(run.summary.get('created_utc', run.path.name)))[-5:]}"
                 if compare
                 else "run"
             )
-            pen = series_pen(color, 2.5)
+            pen = pg.mkPen(color, width=2.5, style=style)
+            thin = pg.mkPen(color, width=2.0, style=style)
             self.trajectory.plot(run.position[:, 0], run.position[:, 1], pen=pen, name=label)
-            self.clearance.plot(run.time_s, run.min_clearance_m, pen=series_pen(color), name=label)
-            self.solver.plot(run.time_s, run.solver_time_ms, pen=series_pen(color), name=label)
+            self.clearance.plot(run.time_s, run.min_clearance_m, pen=thin, name=label)
+            self.solver.plot(run.time_s, run.solver_time_ms, pen=thin, name=label)
             if np.isfinite(run.achieved_risk_total).any():
                 risk = np.where(
                     np.isfinite(run.achieved_risk_total), run.achieved_risk_total, np.nan
                 )
-                self.risk.plot(
-                    run.time_s, risk, pen=series_pen(color), name=label, connect="finite"
-                )
+                self.risk.plot(run.time_s, risk, pen=thin, name=label, connect="finite")
         if primary.risk_budget_total is not None:
             peaks = [
                 float(np.nanmax(r.achieved_risk_total))

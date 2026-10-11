@@ -319,6 +319,19 @@ class WorkbenchWindowTests(unittest.TestCase):
         results.native_table.selectAll()
         self.app.processEvents()
         self.assertIn("Comparing 2", results.native_view.title.text())
+        # Colour follows the controller, never selection order; a repeated
+        # controller is distinguished by line style.
+        from PySide6.QtCore import Qt
+
+        from quadrotor_mpc.interfaces.desktop.workbench import theme
+
+        pens = [item.opts["pen"] for item in results.native_view.clearance.listDataItems()]
+        self.assertEqual(len(pens), 2)
+        joint = theme.CONTROLLER_COLORS["joint_uniform"].lower()
+        self.assertEqual({pen.color().name() for pen in pens}, {joint})
+        self.assertEqual(
+            [pen.style() for pen in pens], [Qt.PenStyle.SolidLine, Qt.PenStyle.DashLine]
+        )
         results.show_path(str(campaign))
         self.app.processEvents()
         self.assertIs(results.detail.currentWidget(), results.campaign_view)

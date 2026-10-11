@@ -1,67 +1,154 @@
+<div align="center">
+
 # Quadrotor MPC Research Workbench
+
+**Chance-constrained model predictive control for quadrotor obstacle avoidance:
+from a 9-state teaching baseline to a 13-state NMPC flying a MuJoCo Crazyflie 2
+on estimated, uncertain state.**
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Validation](https://img.shields.io/badge/validation-with%20limitations-orange)](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md)
 
-A reproducible research workbench for deterministic MPC and chance-constrained
-MPC (CC-MPC) obstacle avoidance with a native 13-state MuJoCo/ESEKF validation
-track.
+<img src="assets/readme/flight.gif" width="820" alt="MuJoCo Crazyflie 2 flying past a static gate and two moving obstacles; the blue trail is the flown path, green dots are the NMPC prediction horizon and orange lines are the predicted obstacle motion">
 
-> **Current status:** feature-complete research prototype, empirically validated
-> with documented limitations. It is not a production flight controller and
-> does not currently establish an episode-wide probabilistic safety guarantee
-> or 20 Hz real-time feasibility.
+<sub>Joint-risk CC-MPC, seed 1001, nominal noise. Blue: flown path · green: NMPC
+prediction horizon · orange: predicted obstacle motion · yellow: goal.</sub>
 
-## What is implemented
+</div>
 
-- A 9-state executable MPC/CC-MPC research baseline with paired experiments,
-  parameter sweeps, reports and a Streamlit dashboard.
-- A separate 13-state quaternion NMPC/MuJoCo plant using the sourced Bitcraze
-  Crazyflie 2 model.
-- Seeded sensor simulation, a 12D error-state EKF and probabilistic obstacle
-  trackers.
-- Horizon covariance propagation, spherical chance-constraint tightening and
-  individual or joint-uniform risk allocation.
-- Explicit soft-slack reporting, solution acceptance gates and bounded fallback
-  control.
-- A native desktop safety console, recording/replay and paired Monte Carlo
-  validation with exact one-sided collision bounds, Wilson intervals and
-  paired McNemar tests.
+> [!NOTE]
+> **Status:** feature-complete research prototype, empirically validated with
+> documented limitations. It is not a production flight controller, it does
+> not establish an episode-wide probabilistic safety guarantee, and the chance
+> controllers do not yet meet the 50 ms (20 Hz) real-time period.
 
-The controller receives estimated beliefs rather than hidden MuJoCo truth.
-The 9-state and 13-state models intentionally remain separate to expose model
-mismatch.
+## Contents
 
-## Validation status
+- [Highlights](#highlights)
+- [How it works](#how-it-works)
+- [Desktop workbench](#desktop-workbench)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Validation status](#validation-status)
+- [Repository map](#repository-map)
+- [Scope boundaries](#scope-boundaries)
+- [Documentation](#documentation)
 
-The committed Stage 8 campaign contains 270 episodes (30 paired seeds per
-controller/noise cell):
+## Highlights
 
-- `0/270` geometric collisions, NaNs or risk-budget accounting failures.
-- Every chance-controller cell contained positive slack.
-- Joint-risk fallback increased from `46.7%` to `100%` across the uncertainty
-  sweep.
-- Joint risk at \(4\Sigma\) reached the goal in `0/30` episodes.
-- Solver p99 did not satisfy the `50 ms` controller period.
-- With 30 trials and zero collisions, the two-sided Wilson 95% upper bound used
-  by that release is `0.113513`, above the empirical gate of `0.10`.
-- This historical campaign predates the October 2026 corrections (constraints
-  on the controllable nodes 1..N, post-solve re-projection, enforced deadline
-  fallback, one-sided Clopper–Pearson gate, worst-trial timing gate). A new
-  50-seed campaign is required before quoting results for the current code.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-The result is therefore `VALIDATED_WITH_LIMITATIONS`; zero observed collisions
-must not be presented as a formal probabilistic guarantee. See the
-[native validation protocol](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md) and
-[raw evidence](2.Code/validation/stage8_30_seed/).
+**Two model tracks**
+
+- 9-state MPC / CC-MPC baseline (CVXPY QP) with paired experiments, sweeps
+  and a Streamlit dashboard.
+- 13-state quaternion NMPC (do-mpc / CasADi) on the sourced Bitcraze
+  Crazyflie 2 MuJoCo model. The models stay separate on purpose to expose
+  model mismatch.
+
+</td>
+<td width="50%" valign="top">
+
+**Uncertainty all the way through**
+
+- Seeded sensors, a 12D error-state EKF and probabilistic obstacle trackers.
+  The controller never sees hidden MuJoCo truth.
+- Horizon covariance propagation, spherical chance constraints, individual or
+  joint-uniform risk allocation and a post-solve risk certificate.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Safety layer**
+
+- Explicit soft-slack reporting, solution acceptance gates and a bounded
+  fallback controller, including enforced deadline fallback.
+
+</td>
+<td valign="top">
+
+**Evidence, not anecdotes**
+
+- Paired Monte Carlo validation with exact one-sided Clopper–Pearson collision
+  bounds, Wilson intervals, McNemar tests with Holm correction and per-trial
+  timing gates.
+
+</td>
+</tr>
+</table>
+
+## How it works
+
+```mermaid
+flowchart LR
+    plant["MuJoCo plant<br/>Crazyflie 2"] -->|true state| sensors["Seeded noisy<br/>sensors"]
+    plant -->|obstacle positions| tracker["Obstacle<br/>trackers"]
+    sensors --> ekf["Error-state<br/>EKF (12D)"]
+    ekf -->|belief + Σ| prop["Horizon covariance<br/>propagation"]
+    tracker -->|belief + Σ| prop
+    prop --> cc["Chance-constraint<br/>tightening"] --> solve["13-state NMPC<br/>IPOPT solve"] --> cert["Post-solve<br/>risk certificate"] --> supervisor["Safety supervisor<br/>accept / fallback"]
+    supervisor -.->|thrust + torques| plant
+```
+
+Each obstacle constraint is evaluated on the controllable nodes
+x<sub>1</sub>…x<sub>N</sub>. The covariance of the vehicle and of each
+obstacle is propagated along the horizon and projected on the separating
+direction, which turns a collision probability ε into a larger keep-out
+radius. The joint mode splits one episode budget over all N × n<sub>obs</sub>
+cells, so it tightens more than the individual mode:
+
+<p align="center">
+<img src="assets/readme/tightening.png" width="720" alt="Required distance to the static gate along the 20-node horizon: deterministic stays at 0.77 m, individual risk grows to about 0.98 m and joint risk grows to about 1.15 m">
+</p>
+
+On the same scenario and seed, that extra margin is visible in flight: the
+minimum clearance grows from deterministic to individual to joint risk, while
+all three still reach the goal.
+
+<p align="center">
+<img src="assets/readme/controllers.png" width="900" alt="Left: top view of the three controller paths around the static gate and moving obstacles. Right: minimum clearance over time; minima are 0.28 m deterministic, 0.36 m individual risk and 0.45 m joint risk">
+</p>
+
+<sub>One episode per controller (seed 1001, nominal noise, `config/mujoco_native_ccmpc.yaml`).
+A single seed illustrates the behaviour; statistical claims come from the Monte
+Carlo campaigns below.</sub>
+
+## Desktop workbench
+
+`quadrotor-mpc-app` is one dark Qt window for the daily workflow, so no
+terminal commands are needed. Jobs run out of process, so a slow solve never
+freezes the window.
+
+<p align="center">
+<img src="assets/readme/workbench-live.gif" width="900" alt="Workbench Simulate page streaming a live NMPC run: trajectory, moving obstacles and live tiles for clearance, solver time and horizon risk">
+</p>
+
+<sub><b>Simulate</b> (Ctrl+1): pick scenario, controller, noise and seed, then watch the run live.</sub>
+
+<table>
+<tr>
+<td width="50%"><img src="assets/readme/workbench-montecarlo.png" alt="Monte Carlo page with a running campaign"></td>
+<td width="50%"><img src="assets/readme/workbench-results-compare.png" alt="Results page comparing three runs"></td>
+</tr>
+<tr>
+<td valign="top"><b>Monte Carlo</b> (Ctrl+2): edit the protocol, then start, stop or resume a campaign while trials stream in.</td>
+<td valign="top"><b>Results</b> (Ctrl+3): browse runs and campaigns, overlay up to three runs and read the validation gates.</td>
+</tr>
+</table>
+
+On Windows, double-click **`Quadrotor MPC Workbench.bat`** at the repository
+root. Elsewhere, run `cd 2.Code && uv run quadrotor-mpc-app`. See the
+[workbench guide](2.Code/docs/WORKBENCH.md).
 
 ## Installation
 
 Python 3.10 or newer is required. Python 3.12 is used by the current validation
 artifact.
-
-### Reproducible environment with uv
 
 ```bash
 git clone https://github.com/whoisLePhuc/quadrotor_mpc.git
@@ -69,7 +156,8 @@ cd quadrotor_mpc/2.Code
 uv sync --all-extras --locked
 ```
 
-### Standard pip installation
+<details>
+<summary>Standard pip installation</summary>
 
 ```bash
 cd quadrotor_mpc/2.Code
@@ -80,15 +168,20 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[full,dev]"
 ```
 
-MuJoCo and the Qt desktop panel need a working desktop OpenGL/EGL runtime. The
-ODE baseline and headless Monte Carlo do not need a visible window.
+</details>
+
+MuJoCo and the Qt windows need a working desktop OpenGL/EGL runtime. The ODE
+baseline and headless Monte Carlo do not need a visible window.
 
 ## Quick start
 
-The fastest path is the desktop workbench: double-click
-`Quadrotor MPC Workbench.bat` (Windows) or run `cd 2.Code && uv run
-quadrotor-mpc-app`. It runs native NMPC simulations, Monte Carlo campaigns and
-compares results without terminal commands (`2.Code/docs/WORKBENCH.md`).
+1. Install as above.
+2. Launch the workbench: `Quadrotor MPC Workbench.bat` (Windows) or
+   `uv run quadrotor-mpc-app`.
+3. On **Simulate**, choose *Joint risk* and press **Run simulation** (Ctrl+R).
+
+<details>
+<summary>Command-line equivalents</summary>
 
 Run a tracked paired ODE experiment:
 
@@ -107,13 +200,21 @@ uv run quadrotor-mpc-sim \
   --compare
 ```
 
-Launch the dashboard:
+Launch the ODE Streamlit dashboard:
 
 ```bash
 uv run quadrotor-mpc-dashboard
 ```
 
-Launch the native CC-MPC scenario on a Linux desktop:
+Run one native episode without a window (add `--progress-json` for
+machine-readable progress):
+
+```bash
+uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml \
+  --headless --mode joint_uniform --noise-scale 1.0 --seed 1001
+```
+
+Open the native 3-D viewer with the safety panel on a Linux desktop:
 
 ```bash
 MUJOCO_GL=glfw uv run quadrotor-mpc-native \
@@ -134,6 +235,41 @@ a fingerprinted, non-editable installed distribution. `--allow-dirty-source`
 exists only for explicitly non-release smoke campaigns and records the exact
 source snapshot as non-release-eligible.
 
+</details>
+
+## Validation status
+
+> [!IMPORTANT]
+> The committed Stage 8 campaign predates the October 2026 corrections
+> (constraints on the controllable nodes 1..N, post-solve re-projection,
+> enforced deadline fallback, one-sided Clopper–Pearson gate, worst-trial
+> timing gate, risk certificate). A new 50-seed campaign is required before
+> quoting results for the current code.
+
+Stage 8 (historical) contains 270 episodes, 30 paired seeds per
+controller/noise cell:
+
+| Check | Result |
+|---|---|
+| Geometric collisions, NaNs, risk-budget accounting failures | ✅ `0/270` |
+| Positive slack in chance-controller cells | ⚠️ present in every cell |
+| Joint-risk fallback across the uncertainty sweep | ⚠️ `46.7%` → `100%` |
+| Joint risk reaching the goal at 4Σ | ❌ `0/30` |
+| Solver p99 within the 50 ms period | ❌ not met |
+| Collision upper bound vs the 0.10 gate (two-sided Wilson 95%, 30 trials) | ⚠️ `0.1135`, above the gate |
+
+The result is therefore `VALIDATED_WITH_LIMITATIONS`. Zero observed collisions
+must not be presented as a formal probabilistic guarantee. See the
+[native validation protocol](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md) and
+[raw evidence](2.Code/validation/stage8_30_seed/).
+
+<details>
+<summary>Stage 8 report figure</summary>
+
+<img src="2.Code/validation/stage8_30_seed/report.png" alt="Stage 8 historical Monte Carlo report: collision rate, goal success, clearance, goal error, positive slack and solver p99 per controller and noise level">
+
+</details>
+
 ## Repository map
 
 ```text
@@ -149,6 +285,8 @@ quadrotor_mpc/
 │   ├── validation/      committed validation evidence
 │   └── docs/            architecture, protocol and limitations
 ├── 3.Notebooks/         learning and formulation notebooks
+├── assets/readme/       figures used by this README
+├── Quadrotor MPC Workbench.bat
 ├── LICENSE
 └── README.md
 ```
@@ -168,15 +306,18 @@ of the current release.
 
 ## Documentation
 
-- [Code workbench guide](2.Code/README.md)
-- [Architecture](2.Code/docs/ARCHITECTURE.md)
-- [Layered package migration](2.Code/docs/LAYERED_PACKAGE_MIGRATION.md)
-- [Model conventions](2.Code/docs/MODEL_CONVENTIONS.md)
-- [Safety fallback](2.Code/docs/SAFE_SLACK_FALLBACK.md)
-- [Desktop safety interface](2.Code/docs/DESKTOP_SAFETY_INTERFACE.md)
-- [Native Monte Carlo validation](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md)
-- [Release stabilization](2.Code/docs/RELEASE_2_0_1.md)
-- [Theory map](1.Docs/Theory/README.md)
+| Topic | Document |
+|---|---|
+| Code workbench guide | [2.Code/README.md](2.Code/README.md) |
+| Desktop workbench | [WORKBENCH.md](2.Code/docs/WORKBENCH.md) |
+| Architecture | [ARCHITECTURE.md](2.Code/docs/ARCHITECTURE.md) |
+| Layered package migration | [LAYERED_PACKAGE_MIGRATION.md](2.Code/docs/LAYERED_PACKAGE_MIGRATION.md) |
+| Model conventions | [MODEL_CONVENTIONS.md](2.Code/docs/MODEL_CONVENTIONS.md) |
+| Safety fallback | [SAFE_SLACK_FALLBACK.md](2.Code/docs/SAFE_SLACK_FALLBACK.md) |
+| Desktop safety interface | [DESKTOP_SAFETY_INTERFACE.md](2.Code/docs/DESKTOP_SAFETY_INTERFACE.md) |
+| Native Monte Carlo validation | [NATIVE_MONTE_CARLO_VALIDATION.md](2.Code/docs/NATIVE_MONTE_CARLO_VALIDATION.md) |
+| Release stabilization | [RELEASE_2_0_1.md](2.Code/docs/RELEASE_2_0_1.md) |
+| Theory map | [1.Docs/Theory/README.md](1.Docs/Theory/README.md) |
 
 ## References
 
