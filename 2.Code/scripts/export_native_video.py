@@ -82,8 +82,12 @@ class SceneDrawer:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("run_dir", nargs="?", help="recording directory (default: newest in outputs/native)")
-    parser.add_argument("-o", "--output", help="output file (.mp4 or .gif); default <run_dir>/video.mp4")
+    parser.add_argument(
+        "run_dir", nargs="?", help="recording directory (default: newest in outputs/native)"
+    )
+    parser.add_argument(
+        "-o", "--output", help="output file (.mp4 or .gif); default <run_dir>/video.mp4"
+    )
     parser.add_argument("--camera", choices=("follow", "orbit", "fixed"), default="follow")
     parser.add_argument("--distance", type=float, default=5.0)
     parser.add_argument("--azimuth", type=float, default=60.0)
@@ -100,7 +104,9 @@ def main() -> int:
     rows, states = recording["rows"], recording["states"]
     n = len(rows)
     obstacles = [dict(o) for o in config.obstacles]
-    plant = MuJoCoPlant(config.start, config.goal_position, obstacles, mj_dt=config.mujoco_timestep_s)
+    plant = MuJoCoPlant(
+        config.start, config.goal_position, obstacles, mj_dt=config.mujoco_timestep_s
+    )
     goal = np.array([config.goal_position[k] for k in "xyz"], dtype=float)
     radii = [o["radius"] + config.safety_margin + DRONE_RADIUS for o in obstacles]
     has_pred = len(recording["predicted_positions"]) == n
@@ -153,7 +159,9 @@ def main() -> int:
                 draw.polyline(pred, (1.0, 0.4, 0.15, 0.55), 0.009, 40)
             draw.polyline(trail, (0.2, 0.55, 1.0, 0.75), 0.018)
             if has_pred and recording["predicted_positions"][i].size:
-                draw.polyline(recording["predicted_positions"][i], (0.15, 1.0, 0.35, 0.8), 0.012, 80)
+                draw.polyline(
+                    recording["predicted_positions"][i], (0.15, 1.0, 0.35, 0.8), 0.012, 80
+                )
 
             frame = renderer.render().copy()
             if Image is not None:

@@ -70,6 +70,13 @@ jobs:
           uv run quadrotor-mpc-monte-carlo \
             --config config/native_monte_carlo.yaml --validate-config
 
+      - name: Execute learning notebooks
+        if: matrix.python-version == '3.12'
+        working-directory: 2.Code
+        env:
+          QMPC_RUN_NOTEBOOKS: "1"
+        run: uv run pytest tests/test_notebooks.py -v
+
       - name: Smoke-test Qt safety panel
         if: matrix.python-version == '3.12'
         working-directory: 2.Code
