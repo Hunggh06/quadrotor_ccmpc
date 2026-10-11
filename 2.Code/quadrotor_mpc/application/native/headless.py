@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +133,82 @@ def apply_run_overrides(
             raise ValueError("duration must be > 0")
         updated = replace(updated, duration_s=float(duration_s))
     return updated
+
+
+@dataclass(frozen=True)
+class HeadlessEpisode:
+    """Outcome of :func:`run_headless_episode`."""
+
+    config: Any
+    result: dict[str, Any]
+    recording: Path | None
+
+
+def run_coupled_headless(
+    config: Any,
+    runtime: HeadlessRecordingRuntime,
+) -> dict[str, Any]:
+    """Run the native closed loop for ``config`` with a headless runtime."""
+    from quadrotor_mpc.application.native.runtime import run_coupled_simulation
+
+    return run_coupled_simulation(
+        x0_vals=config.start,
+        goal_pos=config.goal_position,
+        goal_euler=config.goal_euler,
+        bounds=config.bounds,
+        obstacles=[dict(item) for item in config.obstacles],
+        margin=config.safety_margin,
+        sim_seconds=config.duration_s,
+        mpc_dt=config.mpc_timestep_s,
+        n_horizon=config.horizon_steps,
+        max_iter=config.max_solver_iterations,
+        mj_dt=config.mujoco_timestep_s,
+        runtime=runtime,
+        stop_on_goal=config.stop_on_goal,
+        goal_tolerance=config.goal_tolerance_m,
+        stop_on_collision=config.stop_on_collision,
+        estimation_options=config.estimation,
+        covariance_options=config.covariance_propagation,
+        chance_options=config.chance_constraints,
+        safety_fallback_options=config.safety_fallback,
+    )
+
+
+def run_headless_episode(
+    config: Any,
+    *,
+    mode: str | None = None,
+    noise_scale: float | None = None,
+    seed: int | None = None,
+    duration_s: float | None = None,
+    base_dir: str | Path | None = None,
+    record: bool = True,
+    on_sample: Callable[[dict[str, Any]], None] | None = None,
+) -> HeadlessEpisode:
+    """Run one native episode without a window and return result + recording.
+
+    ``config`` is a loaded native configuration or a path to its YAML file.
+    ``mode``/``noise_scale``/``seed``/``duration_s`` are applied exactly like a
+    Monte Carlo trial (see :func:`apply_run_overrides`). The recording, when
+    enabled, is written under ``<base_dir>/<recording.output_dir>`` and can be
+    read back with ``load_native_recording`` or ``load_native_timeseries``.
+    """
+    if isinstance(config, (str, Path)):
+        from quadrotor_mpc.interfaces.desktop.viewer import load_native_mujoco_config
+
+        config = load_native_mujoco_config(Path(config))
+    effective = apply_run_overrides(
+        config, mode=mode, noise_scale=noise_scale, seed=seed, duration_s=duration_s
+    )
+    runtime = HeadlessRecordingRuntime(
+        effective,
+        base_dir=Path.cwd() if base_dir is None else Path(base_dir),
+        enable_recording=record,
+        on_sample=on_sample,
+    )
+    result = run_coupled_headless(effective, runtime)
+    recording = runtime.finalize(result)
+    return HeadlessEpisode(config=effective, result=result, recording=recording)
 
 
 def _infer_mode(config: Any) -> str:

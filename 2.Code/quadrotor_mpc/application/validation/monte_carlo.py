@@ -1222,6 +1222,13 @@ def run_native_trial_batch(
         "ignore",
         message="The approximateMPC feature requires PyTorch.*",
     )
+    # do-mpc calls np.any on CasADi DM bounds; casadi>=3.8 warns about the
+    # (unchanged) legacy result type once per process.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"\s*casadi: a numpy function was called on a casadi value",
+        category=FutureWarning,
+    )
     runner = NativeMonteCarloRunner(
         NativeMuJoCoConfig.from_mapping(base_config_mapping),
         protocol_type=protocol_type,

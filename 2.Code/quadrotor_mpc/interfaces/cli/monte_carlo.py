@@ -117,6 +117,13 @@ def main(argv: list[str] | None = None) -> int:
     warnings.filterwarnings("ignore", message="The ONNX feature is not available.*")
     warnings.filterwarnings("ignore", message="The opcua feature is not available.*")
     warnings.filterwarnings("ignore", message="The approximateMPC feature requires PyTorch.*")
+    # do-mpc calls np.any on CasADi DM bounds; casadi>=3.8 warns about the
+    # (unchanged) legacy result type once per process.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"\s*casadi: a numpy function was called on a casadi value",
+        category=FutureWarning,
+    )
     warnings.filterwarnings(
         "always",
         message="validation mode 'joint' is deprecated.*",

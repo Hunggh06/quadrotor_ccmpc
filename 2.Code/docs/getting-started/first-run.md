@@ -70,6 +70,15 @@ This runs deterministic MPC and CC-MPC on the 9-state model with the same seed
 and writes a report under `outputs/runs/`. See
 [ODE experiments](../guides/ode-experiments.md).
 
+## 5. Learn with the notebooks
+
+```bash
+uv run jupyter lab ../3.Notebooks
+```
+
+Nine runnable notebooks walk from the 9-state model to Monte Carlo statistics; see
+[3.Notebooks/README.md](../../../3.Notebooks/README.md).
+
 ## Where results go
 
 | Command | Output folder |

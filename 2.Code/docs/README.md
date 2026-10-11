@@ -34,7 +34,9 @@ docs/
 | 6 | [Safety supervisor and fallback](concepts/safety-fallback.md) | When a solution is rejected and what is applied instead |
 
 The mathematical background (dynamics, quaternions, MPC, chance constraints)
-is in the [theory chapters](../../1.Docs/Theory/README.md).
+is in the [theory chapters](../../1.Docs/Theory/README.md). To see each step
+run on real data, use the [notebooks](../../3.Notebooks/README.md): 01–05 cover
+the 9-state track, 06–09 the native track.
 
 **I want to run experiments.**
 

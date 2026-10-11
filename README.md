@@ -284,7 +284,7 @@ quadrotor_mpc/
 │   ├── tests/           unit, integration and release tests
 │   ├── validation/      committed validation evidence
 │   └── docs/            documentation (start at docs/README.md)
-├── 3.Notebooks/         learning and formulation notebooks
+├── 3.Notebooks/         runnable learning notebooks (use the package)
 ├── assets/readme/       figures used by this README
 ├── Quadrotor MPC Workbench.bat
 ├── LICENSE
@@ -316,6 +316,7 @@ paths for newcomers, controller internals, experiments and code changes.
 | Run experiments | [Native simulation](2.Code/docs/guides/native-simulation.md) · [Monte Carlo campaigns](2.Code/docs/guides/monte-carlo.md) · [ODE experiments](2.Code/docs/guides/ode-experiments.md) |
 | Know what a result may claim | [Claims and statistics](2.Code/docs/validation/claims-and-statistics.md) |
 | Change the code | [Architecture](2.Code/docs/reference/architecture.md) · [Controller interface](2.Code/docs/reference/controller-interface.md) |
+| Learn by running code | [Notebooks](3.Notebooks/README.md): nine notebooks from the 9-state model to Monte Carlo statistics |
 | Read the theory | [Theory chapters](1.Docs/Theory/README.md) |
 
 ## References

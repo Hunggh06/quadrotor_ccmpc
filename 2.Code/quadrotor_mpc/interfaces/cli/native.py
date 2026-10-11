@@ -85,6 +85,13 @@ def main(argv: list[str] | None = None) -> int:
     warnings.filterwarnings("ignore", message="The ONNX feature is not available.*")
     warnings.filterwarnings("ignore", message="The opcua feature is not available.*")
     warnings.filterwarnings("ignore", message="The approximateMPC feature requires PyTorch.*")
+    # do-mpc calls np.any on CasADi DM bounds; casadi>=3.8 warns about the
+    # (unchanged) legacy result type once per process.
+    warnings.filterwarnings(
+        "ignore",
+        message=r"\s*casadi: a numpy function was called on a casadi value",
+        category=FutureWarning,
+    )
     args = build_parser().parse_args(argv)
     recording = None
     if args.replay:
@@ -222,8 +229,8 @@ def _run_headless(config: NativeMuJoCoConfig, *, record: bool, progress: bool) -
         HeadlessRecordingRuntime,
         progress_line,
         result_line,
+        run_coupled_headless,
     )
-    from quadrotor_mpc.application.native.runtime import run_coupled_simulation
 
     total_steps = int(config.duration_s / config.mpc_timestep_s)
     counter = {"step": 0}
@@ -236,27 +243,7 @@ def _run_headless(config: NativeMuJoCoConfig, *, record: bool, progress: bool) -
     runtime = HeadlessRecordingRuntime(
         config, base_dir=Path.cwd(), enable_recording=record, on_sample=on_sample
     )
-    result = run_coupled_simulation(
-        x0_vals=config.start,
-        goal_pos=config.goal_position,
-        goal_euler=config.goal_euler,
-        bounds=config.bounds,
-        obstacles=[dict(item) for item in config.obstacles],
-        margin=config.safety_margin,
-        sim_seconds=config.duration_s,
-        mpc_dt=config.mpc_timestep_s,
-        n_horizon=config.horizon_steps,
-        max_iter=config.max_solver_iterations,
-        mj_dt=config.mujoco_timestep_s,
-        runtime=runtime,
-        stop_on_goal=config.stop_on_goal,
-        goal_tolerance=config.goal_tolerance_m,
-        stop_on_collision=config.stop_on_collision,
-        estimation_options=config.estimation,
-        covariance_options=config.covariance_propagation,
-        chance_options=config.chance_constraints,
-        safety_fallback_options=config.safety_fallback,
-    )
+    result = run_coupled_headless(config, runtime)
     recording_path = runtime.finalize(result)
     print(f"collision:      {result['collided']}")
     print(f"termination:    {result['termination_reason']}")

@@ -5,6 +5,11 @@ if exist ".venv\Scripts\pythonw.exe" (
     start "" ".venv\Scripts\pythonw.exe" -m quadrotor_mpc.interfaces.cli.app
     exit /b 0
 )
+rem Shared environment in the folder that contains the repository.
+if exist "..\..\.venv\Scripts\pythonw.exe" (
+    start "" "..\..\.venv\Scripts\pythonw.exe" -m quadrotor_mpc.interfaces.cli.app
+    exit /b 0
+)
 where uv >nul 2>nul
 if %errorlevel%==0 (
     uv run quadrotor-mpc-app

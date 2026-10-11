@@ -23,6 +23,18 @@
   fixed: metrics timing gate (worst trial) and collision bound, controller
   output table, Monte Carlo claim/validation statuses and protocol types.
   `2.Code/README.md` is now a short entry page.
+- `3.Notebooks` rebuilt as a runnable learning track (01–05 ODE track, 06–09
+  native track) that imports `quadrotor_mpc` instead of copying code, with a
+  shared `nbsetup.py`, saved outputs and links to docs and theory. The old
+  notebooks had machine-specific paths, duplicated code that had drifted from
+  the package, presented a repulsive-field heuristic as CC-MPC and claimed an
+  O(δx²) linearization error that the Euler transition matrix does not
+  achieve. Paper concepts the package does not implement (detection, multi-
+  robot, FOV, formula checks) moved to `3.Notebooks/extras/` with a banner.
+  New `notebooks` extra; `tests/test_notebooks.py` checks structure and, with
+  `QMPC_RUN_NOTEBOOKS=1` (CI), executes the track.
+- `run_headless_episode()` in `application/native/headless.py`: one-call
+  Python API for a native episode (used by the CLI and the notebooks).
 - Root README rewritten with figures generated from real runs
   (`assets/readme/`): MuJoCo flight GIF, horizon tightening, controller
   comparison, workbench GIF and screenshots.

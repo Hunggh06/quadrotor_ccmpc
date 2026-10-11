@@ -199,6 +199,26 @@ class HeadlessRuntimeTests(unittest.TestCase):
         self.assertEqual(individual.name, f"{base.name}-individual")
 
     @unittest.skipUnless(NATIVE_AVAILABLE, "native MuJoCo/NMPC dependencies are not installed")
+    def test_run_headless_episode_python_api(self):
+        from quadrotor_mpc.application.catalog import load_native_timeseries
+        from quadrotor_mpc.application.native.headless import run_headless_episode
+
+        samples = []
+        with tempfile.TemporaryDirectory() as directory:
+            episode = run_headless_episode(
+                CODE_ROOT / "config" / "mujoco_native.yaml",
+                duration_s=0.15,
+                base_dir=directory,
+                on_sample=samples.append,
+            )
+            self.assertEqual(episode.result["termination_reason"], "duration_reached")
+            self.assertIsNotNone(episode.recording)
+            self.assertTrue(str(episode.recording).startswith(directory))
+            series = load_native_timeseries(episode.recording)
+            self.assertEqual(len(series.time_s), len(samples))
+            self.assertGreaterEqual(len(samples), 2)
+
+    @unittest.skipUnless(NATIVE_AVAILABLE, "native MuJoCo/NMPC dependencies are not installed")
     def test_headless_cli_records_and_reports_progress(self):
         import contextlib
         import io
