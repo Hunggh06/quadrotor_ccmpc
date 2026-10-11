@@ -44,7 +44,7 @@ The EKF approach is chosen because:
 
 The state covariance evolves according to the linearized dynamics:
 
-$$\boxed{\boldsymbol{\Gamma}^{k+1} = \mathbf{F}^k \boldsymbol{\Gamma}^k \mathbf{F}^{k\;T} + \mathbf{W}^k}$$
+$$\boxed{\boldsymbol{\Gamma}^{k+1} = \mathbf{F}^k \boldsymbol{\Gamma}^k \mathbf{F}^{k\;T} + \mathbf{W}_d^k}$$
 
 where:
 
@@ -63,12 +63,26 @@ Illustrative project values, to be replaced by estimator output or identified no
 
 ### Process Noise
 
-$$\mathbf{W} = \text{diag}\left([\sigma_{p,w}^2]_{1\times 3}, [\sigma_{v,w}^2]_{1\times 3}, [\sigma_{a,w}^2]_{1\times 3}\right)$$
+**Convention used by this implementation:** the configured process noise is a
+*continuous-time* white-noise intensity (power spectral density)
+$\mathbf{W}_c$, discretized per step with the first-order (Euler–Maruyama)
+approximation
 
-Illustrative tuning values, not universal values from the two papers:
-- $\sigma_{p,w} = 0.01$ m (per-step position noise)
-- $\sigma_{v,w} = 0.1$ m/s (per-step velocity noise)
-- $\sigma_{a,w} = 0.02$ rad (per-step attitude noise)
+$$\mathbf{W}_d = \mathbf{W}_c\,\Delta t,\qquad
+\mathbf{W}_c = \text{diag}\left([q_{p}^2]_{1\times 3}, [q_{v}^2]_{1\times 3}, [q_{a}^2]_{1\times 3}\right)$$
+
+so the accumulated noise over a fixed time span does not depend on the chosen
+timestep. The intensities have units m/√s, (m/s)/√s and rad/√s; the per-step
+standard deviation is $q\sqrt{\Delta t}$.
+
+Illustrative tuning values (`controller.uncertainty.process_noise_*` in
+`config/controller.yaml`), not universal values from the two papers:
+- $q_{p} = 0.01$ m/√s → per-step σ ≈ 2.4 mm at $\Delta t = 0.06$ s
+- $q_{v} = 0.1$ (m/s)/√s → per-step σ ≈ 0.024 m/s
+- $q_{a} = 0.02$ rad/√s → per-step σ ≈ 4.9 mrad
+
+Do not multiply an already-discrete per-step covariance by $\Delta t$ again
+(see Ch. 18). Code: `control/ccmpc/uncertainty.py`, `UncertaintyPropagator.propagate`.
 
 ### Position Covariance Extraction
 
@@ -163,7 +177,7 @@ class UncertaintyPropagator:
  Gamma_k = Gamma_list[-1]
  A_cont = dynamics.jacobian_state(x_guess[:, k], u_guess[:, k])
  F_k = np.eye(9) + dt * A_cont # Discrete-time Jacobian
- W_d = self.discrete_process_covariance(A_cont, dt)
+ W_d = self.W * dt # W is the continuous intensity W_c
  Gamma_k1 = F_k @ Gamma_k @ F_k.T + W_d
  Gamma_list.append(Gamma_k1)
  

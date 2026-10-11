@@ -106,10 +106,11 @@ controller:
     min_altitude: 0.15    # meters above ground (rotor clearance ~0.1m + margin)
 
   uncertainty:
-    # Process noise standard deviations
-    process_noise_pos: 0.01
-    process_noise_vel: 0.1
-    process_noise_att: 0.02
+    # Process noise as continuous-time intensities q (W_c = diag(q^2)),
+    # discretized as W_d = W_c * dt (see Theory Ch. 14). Per-step std = q*sqrt(dt).
+    process_noise_pos: 0.01   # m/sqrt(s)
+    process_noise_vel: 0.1    # (m/s)/sqrt(s)
+    process_noise_att: 0.02   # rad/sqrt(s)
     
     # Initial state uncertainty (VIO noise)
     init_pos_noise: 0.05
