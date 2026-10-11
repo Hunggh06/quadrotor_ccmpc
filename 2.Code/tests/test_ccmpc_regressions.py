@@ -9,6 +9,10 @@ Locks three fixes:
    re-propagated along the new guess) and never returns an unsolved seed
    trajectory; exhausting restarts yields the emergency-hover rollout.
 3. Covariance propagation uses the controller's configured timestep.
+4. Obstacle horizon covariance is ``Sigma + t^2 Sigma_v`` everywhere.
+5. The linearised chance constraint uses the transformed-space normal of
+   Zhu & Alonso-Mora (2019), so it is tangent to the collision ellipsoid and
+   agrees with ``chance_constraint_residual`` at the linearisation point.
 """
 
 from __future__ import annotations
@@ -56,7 +60,7 @@ class ObstacleTimeAlignmentTests(unittest.TestCase):
             )
             np.testing.assert_allclose(
                 predictions[k][0]["Sigma"],
-                obstacle.Sigma + (k + 1) * obstacle.Sigma_v * dt**2,
+                obstacle.Sigma + obstacle.Sigma_v * elapsed**2,
             )
 
     def test_chance_constraint_receives_aligned_obstacle(self):
@@ -76,6 +80,22 @@ class ObstacleTimeAlignmentTests(unittest.TestCase):
 
         self.assertIn(0, captured)
         np.testing.assert_allclose(captured[0], obstacle.p_hat + obstacle.v_hat * controller.dt)
+
+
+class ObstacleCovarianceConsistencyTests(unittest.TestCase):
+    def test_ccmpc_and_ode_residual_share_growth_law(self):
+        obstacle = EllipsoidalObstacle([3.0, 0.0, 1.5], [0.4, 0.4, 0.8], velocity=[0.0, 1.0, 0.0])
+        for elapsed in (0.06, 0.6, 2.4):
+            mean, covariance = obstacle.predicted_mean_and_covariance(elapsed)
+            np.testing.assert_allclose(mean, obstacle.p_hat + obstacle.v_hat * elapsed)
+            np.testing.assert_allclose(covariance, obstacle.Sigma + obstacle.Sigma_v * elapsed**2)
+
+    def test_prediction_does_not_mutate_tracker_state(self):
+        obstacle = EllipsoidalObstacle([3.0, 0.0, 1.5], [0.4, 0.4, 0.8], velocity=[0.0, 1.0, 0.0])
+        before = (obstacle.p_hat.copy(), obstacle.Sigma.copy())
+        obstacle.predicted_mean_and_covariance(1.0)
+        np.testing.assert_array_equal(obstacle.p_hat, before[0])
+        np.testing.assert_array_equal(obstacle.Sigma, before[1])
 
 
 class ObstacleSelectionTests(unittest.TestCase):
@@ -114,6 +134,52 @@ class ObstacleSelectionTests(unittest.TestCase):
         self.assertIn(crossing, selected)
         self.assertIn(static_a, selected)
         self.assertNotIn(static_b, selected)
+
+
+class TransformedNormalTests(unittest.TestCase):
+    def _setup(self):
+        from quadrotor_mpc.control.ccmpc.utils import Omega_half, Omega_matrix
+
+        controller = CCMPC(CONFIG)
+        obstacle = EllipsoidalObstacle([3.0, 0.0, 1.5], [2.0, 0.4, 0.8], yaw=0.65)
+        omega = Omega_matrix(obstacle.axes, controller.mav_radius, obstacle.R_o)
+        return controller, obstacle, omega, Omega_half(omega)
+
+    def _linear_value(self, controller, point, flat=0):
+        a = np.asarray(controller._cc_a[flat].value)
+        rhs = float(controller._cc_rhs[flat].value)
+        return float(a @ point) - 1.0 - rhs
+
+    def test_constraint_matches_residual_at_linearisation_point(self):
+        from quadrotor_mpc.control.ccmpc.risk import chance_constraint_residual
+
+        controller, obstacle, omega, L = self._setup()
+        sigma_mav = np.diag([0.02, 0.03, 0.01])
+        rng = np.random.default_rng(3)
+        for _ in range(5):
+            guess = obstacle.p_hat + rng.normal(size=3) * 2.0
+            controller._set_chance_constraint_params(
+                0, 0, guess, obstacle.p_hat, L, sigma_mav, obstacle.Sigma
+            )
+            expected = chance_constraint_residual(
+                guess, obstacle.p_hat, omega, sigma_mav, obstacle.Sigma, controller.delta
+            )
+            self.assertAlmostEqual(self._linear_value(controller, guess), expected, places=9)
+
+    def test_zero_covariance_constraint_is_tangent_to_rotated_ellipsoid(self):
+        controller, obstacle, omega, L = self._setup()
+        zero = np.zeros((3, 3))
+        # A point exactly on the collision boundary (metric 1) off the principal axes.
+        direction = np.array([0.4, 1.0, 0.2])
+        direction /= np.sqrt(direction @ omega @ direction)
+        boundary = obstacle.p_hat + direction
+        controller._set_chance_constraint_params(0, 0, boundary, obstacle.p_hat, L, zero, zero)
+        self.assertAlmostEqual(self._linear_value(controller, boundary), 0.0, places=9)
+        # Every boundary point lies on the feasible side of the tangent plane.
+        for angle in np.linspace(0.0, 2.0 * np.pi, 24, endpoint=False):
+            other = np.array([np.cos(angle), np.sin(angle), 0.3])
+            other /= np.sqrt(other @ omega @ other)
+            self.assertLessEqual(self._linear_value(controller, obstacle.p_hat + other), 1e-9)
 
 
 class SolverFailureRestartTests(unittest.TestCase):

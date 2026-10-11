@@ -111,7 +111,8 @@ Run `config/mujoco_native_estimation.yaml` and
 Run `config/mujoco_native_ccmpc.yaml` and verify:
 
 - `risk_semantics == joint` and `risk_allocation_method == uniform`;
-- each solve allocates over `(N+1) * n_obstacles` scalar constraints;
+- each solve allocates over `N * n_obstacles` scalar constraints on nodes
+  `1..N`; node 0 carries zero risk;
 - `sum(risk_allocation_horizon[t]) <= risk_budget_total[t] + tolerance`;
 - `risk_budget_allocated == risk_budget_total == 0.10` for the supplied
   three-obstacle scenario;
@@ -241,8 +242,12 @@ Verify:
 - covariance scale `s` multiplies configured standard deviations by `sqrt(s)`;
 - deterministic mode disables chance tightening while retaining the same
   estimator, plant, obstacles and safety-supervisor policy;
-- every Bernoulli episode metric reports its event count, rate and Wilson
-  confidence interval;
+- every Bernoulli episode metric reports its event count, rate, a two-sided
+  Wilson interval (descriptive) and a one-sided exact Clopper–Pearson upper
+  bound; the collision gate uses the bound named by
+  `statistics.collision_bound_method` (default `clopper_pearson_one_sided`);
+- paired controller comparisons report exact McNemar tests for collision and
+  success with Holm-adjusted p-values across all cells;
 - risk-budget failures, slack and fallback remain separate metrics;
 - `HORIZON_GUARANTEE_ELIGIBLE` requires every completed tick to be eligible
   under the full gate set: joint semantics, valid budget, primary solver
@@ -251,7 +256,8 @@ Verify:
 - any positive slack or fallback blocks the finite-sample chance claim;
 - no per-horizon joint budget is reinterpreted as episode collision
   probability;
-- p99 timing is checked against the 50 ms controller period;
+- worst-trial timing: every trial's p99 solver time must fit in the 50 ms
+  controller period, and a trial without timing samples fails the gate;
 - interrupted runs resume only after a protocol-fingerprint match;
 - manifest, protocol/config snapshots, checkpoint, CSV, aggregate JSON,
   Markdown and PNG are all present.
@@ -280,9 +286,12 @@ joint-minus-deterministic mean clearance deltas were `+0.038600 m`,
 control traded that clearance for a mean final-error increase of `0.338990 m`;
 every episode missed the configured goal threshold.
 
-The campaign status is `VALIDATED_WITH_LIMITATIONS`. For zero collisions in 30
-trials, the Wilson 95% upper bound is `0.113513`, above the empirical gate
-`0.10`. Every chance-controller cell also contained positive slack and
+The campaign status is `VALIDATED_WITH_LIMITATIONS`. Under the gate rules of
+that release, zero collisions in 30 trials gave a two-sided Wilson 95% upper
+bound of `0.113513`, above the empirical gate `0.10`. (The current default,
+fixed before any new campaign, is the one-sided exact Clopper–Pearson bound,
+`1 - 0.05^(1/30) = 0.0950` for the same counts; the historical campaign is not
+re-graded.) Every chance-controller cell also contained positive slack and
 fallback. Median per-trial solver p99 ranged from `87.523 ms` to `95.470 ms`
 for the chance controllers, so the 50 ms real-time gate failed.
 

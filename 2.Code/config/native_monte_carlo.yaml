@@ -25,6 +25,10 @@ noise_levels:
 statistics:
   confidence_level: 0.95
   minimum_trials_for_claim: 30
+  # Fixed before any campaign is run (not chosen after seeing results).
+  # One-sided exact bound on the episode collision rate; the descriptive
+  # two-sided Wilson interval is still reported for every rate.
+  collision_bound_method: clopper_pearson_one_sided
 
 validation:
   # This is an empirical finite-sample gate, not an interpretation of the
@@ -33,4 +37,6 @@ validation:
   require_zero_positive_slack: true
   require_zero_fallback: true
   require_zero_budget_failures: true
+  # Worst-trial rule: every episode's per-trial p99 solver time must fit in
+  # the control period.
   timing_percentile: 0.99

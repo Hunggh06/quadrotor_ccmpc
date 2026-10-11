@@ -304,7 +304,15 @@ class ChanceProfileEnforcedSemanticsTests(unittest.TestCase):
             enforced.provenance.solve_attempt_id,
             solution.chance_profile_solve_attempt_id,
         )
-        self.assertIsNone(solution.post_solve_diagnostic_profile)
+        # The post-solve re-projection now runs on every chance solve; it has
+        # its own phase/identity and never replaces the enforced profile.
+        diagnostic = cast("ChanceProfile", solution.post_solve_diagnostic_profile)
+        self.assertEqual(diagnostic.provenance.phase, "POST_SOLVE_DIAGNOSTIC")
+        self.assertNotEqual(diagnostic.provenance.profile_id, enforced.provenance.profile_id)
+        # Node 0 is the measured state: not constrained, no risk spent on it.
+        self.assertFalse(bool(np.any(enforced.active_mask[0])))
+        self.assertTrue(bool(np.all(enforced.active_mask[1:])))
+        np.testing.assert_array_equal(enforced.epsilon[0], 0.0)
 
     def test_deterministic_mode_serializes_null_profile(self):
         solution = self._solve_with_mock_controller(deterministic=True)
@@ -348,10 +356,11 @@ class ChanceProfileEnforcedSemanticsTests(unittest.TestCase):
             diagnostic.epsilon.shape,
         )
         # Budget metadata must come from the enforced profile: it counts the
-        # full (N+1) horizon, not the shortened diagnostic grid.
+        # N constrained nodes 1..N of the full horizon (node 0 is the fixed
+        # measured state), not the shortened diagnostic grid.
         self.assertEqual(
             solution.risk_constraint_count,
-            3,
+            2,
         )
 
     def _solve_with_mock_controller(

@@ -158,21 +158,30 @@ def allocate_risk_budget(
     enabled: bool,
     individual_epsilon: float,
     options: RiskBudgetOptions,
+    first_constrained_step: int = 0,
 ) -> RiskAllocation:
     """Allocate risk for one receding-horizon solve.
 
-    Every step represented in the NMPC constraint grid is counted.  Thus, for
-    the native controller the active count is ``(N + 1) * n_obstacles``.
+    Rows ``0 .. first_constrained_step-1`` are not decision constraints (for
+    the native NMPC, row 0 is the measured current state, which no control can
+    change); they receive zero risk and a zero quantile.  Only the remaining
+    rows are counted, so for the native controller the active count is
+    ``N * n_obstacles`` and the joint budget is not spent on node 0.
     """
 
     steps = int(steps)
     obstacle_count = int(obstacle_count)
+    first = int(first_constrained_step)
     if steps < 1:
         raise ValueError("steps must be >= 1")
     if obstacle_count < 0:
         raise ValueError("obstacle_count must be >= 0")
+    if not 0 <= first < steps:
+        raise ValueError("first_constrained_step must lie in [0, steps)")
     shape = (steps, obstacle_count)
-    active_count = steps * obstacle_count
+    constrained = np.zeros(shape, dtype=bool)
+    constrained[first:, :] = True
+    active_count = (steps - first) * obstacle_count
     if not enabled:
         return RiskAllocation(
             epsilons=np.zeros(shape, dtype=float),
@@ -205,7 +214,7 @@ def allocate_risk_budget(
         )
 
     if options.semantics == INDIVIDUAL_RISK:
-        epsilons = np.full(shape, individual, dtype=float)
+        epsilons = np.where(constrained, individual, 0.0)
         configured_total = None
         remaining = None
         status = "INDIVIDUAL_ONLY"
@@ -213,7 +222,7 @@ def allocate_risk_budget(
         per_constraint = options.total_epsilon / active_count
         # The total is already constrained to < 0.5, so each positive uniform
         # share is a valid one-sided Gaussian epsilon.
-        epsilons = np.full(shape, per_constraint, dtype=float)
+        epsilons = np.where(constrained, per_constraint, 0.0)
         configured_total = options.total_epsilon
         remaining = max(0.0, configured_total - float(np.sum(epsilons)))
         status = (
@@ -225,7 +234,10 @@ def allocate_risk_budget(
             raise RuntimeError("uniform joint-risk allocation exceeded total_epsilon")
 
     quantiles = np.asarray(
-        [NormalDist().inv_cdf(1.0 - epsilon) for epsilon in epsilons.reshape(-1)],
+        [
+            NormalDist().inv_cdf(1.0 - epsilon) if epsilon > 0.0 else 0.0
+            for epsilon in epsilons.reshape(-1)
+        ],
         dtype=float,
     ).reshape(shape)
     return RiskAllocation(

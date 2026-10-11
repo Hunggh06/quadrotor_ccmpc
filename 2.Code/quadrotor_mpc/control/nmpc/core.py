@@ -109,6 +109,15 @@ def _dynamics_ca(xvec, uvec):
     return vertcat(vx, vy, vz, vxdot, vydot, vzdot, qdw, qdx, qdy, qdz, wxdot, wydot, wzdot)
 
 
+# do-mpc evaluates ``set_nl_cons`` at stages k = 0..N-1 on x_k, so a constraint
+# written on the current state would act on the fixed initial state x_0 (which
+# no control can change) and never on the terminal state x_N.  The obstacle
+# constraints are therefore written on the successor state x_{k+1} = f(x_k, u_k)
+# and the stage-k obstacle TVPs carry the prediction for node k+1.  Prediction
+# arrays keep N+1 nodes; node 0 is the measured state and is not constrained.
+FIRST_CONSTRAINED_NODE = 1
+
+
 def build_model(dt, obstacles):
     """
     Discrete-time (explicit RK4) do-mpc model. Using an explicit discretization
@@ -245,6 +254,8 @@ def build_controller(
     mpc.bounds["lower", "_u", "tauz"] = -torque_yaw_lim
     mpc.bounds["upper", "_u", "tauz"] = torque_yaw_lim
 
+    # Successor position x_{k+1}(x_k, u_k) from the discrete RK4 model.
+    next_x, next_y, next_z = model._rhs["x"], model._rhs["y"], model._rhs["z"]
     for i, _obs in enumerate(obstacles):
         cx, cy, cz = (
             model.tvp[f"obsx_{i}"],
@@ -252,7 +263,7 @@ def build_controller(
             model.tvp[f"obsz_{i}"],
         )
         safe_dist = model.tvp[f"obs_safe_dist_{i}"]
-        dist_expr = ca_sqrt((x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2 + 1e-6)
+        dist_expr = ca_sqrt((next_x - cx) ** 2 + (next_y - cy) ** 2 + (next_z - cz) ** 2 + 1e-6)
         mpc.set_nl_cons(
             f"obstacle_{i}",
             safe_dist - dist_expr,
@@ -350,8 +361,11 @@ def make_mpc_tvp_fun(
                 axis=1,
             )
         for k in range(n_horizon + 1):
+            # Stage k constrains x_{k+1}: load prediction node k+1.  The last
+            # TVP slot is unused by the constraints and repeats node N.
+            node = min(k + FIRST_CONSTRAINED_NODE, n_horizon)
             obstacle_positions = (
-                None if obstacle_predictions is None else obstacle_predictions[:, k, :]
+                None if obstacle_predictions is None else obstacle_predictions[:, node, :]
             )
             _fill_tvp(
                 template,
@@ -360,13 +374,13 @@ def make_mpc_tvp_fun(
                 qg,
                 obstacles,
                 dyn_idx,
-                t_now + k * dt,
+                t_now + node * dt,
                 obstacle_positions=obstacle_positions,
-                obstacle_sigmas=(None if obstacle_sigmas is None else obstacle_sigmas[:, k]),
-                obstacle_betas=None if obstacle_betas is None else obstacle_betas[:, k],
-                obstacle_risks=(None if obstacle_risks is None else obstacle_risks[:, k]),
+                obstacle_sigmas=(None if obstacle_sigmas is None else obstacle_sigmas[:, node]),
+                obstacle_betas=None if obstacle_betas is None else obstacle_betas[:, node],
+                obstacle_risks=(None if obstacle_risks is None else obstacle_risks[:, node]),
                 obstacle_safe_distances=(
-                    None if obstacle_safe_distances is None else obstacle_safe_distances[:, k]
+                    None if obstacle_safe_distances is None else obstacle_safe_distances[:, node]
                 ),
             )
         return template

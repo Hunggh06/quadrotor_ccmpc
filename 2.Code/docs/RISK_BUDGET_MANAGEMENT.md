@@ -38,15 +38,20 @@ For \(N_c\) active scalar chance constraints and configured total budget
 \epsilon_{\mathrm{total}}.
 \]
 
-The native NLP has \(N+1\) state nodes, so:
+The native NLP has \(N+1\) state nodes, but node 0 is the measured current
+state: no control can change it, so it is not a decision constraint. The
+obstacle constraints are imposed on the successor states \(x_1..x_N\) (each
+do-mpc stage \(k\) constrains \(x_{k+1}=f(x_k,u_k)\)), hence
 
 \[
-N_c=(N+1)n_{\mathrm{obs}}.
+N_c=N\,n_{\mathrm{obs}},\qquad \epsilon_{0,o}=0 .
 \]
 
-Every node present in the constraint grid, including the initial node, is
-counted. This is conservative but keeps the numerical model and the reported
-union-bound accounting identical.
+Earlier releases constrained \(x_0..x_{N-1}\) and split the budget over
+\((N+1)n_{\mathrm{obs}}\) cells: risk was spent on the uncontrollable node 0
+(whose violation could only become slack) while the terminal node \(x_N\)
+was never constrained. The numerical model and the union-bound accounting
+remain identical: both cover exactly nodes \(1..N\).
 
 By Boole's inequality:
 

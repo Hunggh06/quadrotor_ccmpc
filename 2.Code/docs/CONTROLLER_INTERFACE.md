@@ -45,10 +45,13 @@ inputs are normalized at construction.
 | `predicted_covariances` | error-state covariance horizon | `(N+1, 12, 12)` |
 | `predicted_obstacle_covariances` | 6D covariance horizon per obstacle | `(N+1, n_obs, 6, 6)` |
 | `projected_uncertainties` | collision-normal relative standard deviation | `(N+1, n_obs)` |
-| `tightened_safety_radii` | deterministic radius supplied to the NLP | `(N+1, n_obs)` |
-| `chance_margins` | signed obstacle constraint margins | `(N+1, n_obs)` |
-| `risk_allocations` | allocated risk per horizon constraint | `(N+1, n_obs)` |
+| `tightened_safety_radii` | deterministic radius supplied to the NLP (seed normals) | `(N+1, n_obs)` |
+| `chance_margins` | signed margins vs the radius re-projected on the solution | `(N+1, n_obs)` |
+| `risk_allocations` | allocated risk per horizon constraint (row 0 = 0) | `(N+1, n_obs)` |
 | `slacks` | nonnegative constraint relaxation | `(N+1, n_obs)` |
+
+Row 0 of the horizon arrays is the measured current state. The NLP constrains
+nodes `1..N` only; row 0 carries zero risk and the untightened base radius.
 | `solver_status` | backend-independent status label | string |
 | `risk_semantics` | `disabled`, `individual` or `joint` | string |
 | `risk_allocation_method` | `none` or `uniform` | string |

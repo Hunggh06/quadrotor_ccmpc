@@ -91,8 +91,9 @@ MUJOCO_GL=glfw quadrotor-mpc-native \
   --config config/mujoco_native_ccmpc.yaml
 ```
 
-This configuration distributes `epsilon_total = 0.10` uniformly across all
-`(N+1) * n_obstacles` scalar constraints in each NMPC solve. The budget is a
+This configuration distributes `epsilon_total = 0.10` uniformly across the
+`N * n_obstacles` scalar constraints on the controllable horizon nodes `1..N`
+of each NMPC solve (node 0 is the measured state and is not constrained). The budget is a
 receding-horizon union bound, not an episode-wide guarantee.
 
 Run the Stage 8 paired native Monte Carlo protocol:

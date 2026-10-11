@@ -192,8 +192,7 @@ class ScipyMPCController:
             elapsed = k * self.dt
             mav_cov = covariance_horizon[k][:3, :3]
             for obstacle in closest:
-                obs_position = obstacle.p_hat + obstacle.v_hat * elapsed
-                obs_covariance = obstacle.Sigma + obstacle.Sigma_v * elapsed**2
+                obs_position, obs_covariance = obstacle.predicted_mean_and_covariance(elapsed)
                 residual = chance_constraint_residual(
                     trajectory[k, :3],
                     obs_position,

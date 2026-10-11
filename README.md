@@ -26,7 +26,8 @@ track.
 - Explicit soft-slack reporting, solution acceptance gates and bounded fallback
   control.
 - A native desktop safety console, recording/replay and paired Monte Carlo
-  validation with Wilson confidence intervals.
+  validation with exact one-sided collision bounds, Wilson intervals and
+  paired McNemar tests.
 
 The controller receives estimated beliefs rather than hidden MuJoCo truth.
 The 9-state and 13-state models intentionally remain separate to expose model
@@ -43,8 +44,12 @@ controller/noise cell):
   sweep.
 - Joint risk at \(4\Sigma\) reached the goal in `0/30` episodes.
 - Solver p99 did not satisfy the `50 ms` controller period.
-- With 30 trials and zero collisions, the Wilson 95% upper bound is `0.113513`,
-  above the empirical gate of `0.10`.
+- With 30 trials and zero collisions, the two-sided Wilson 95% upper bound used
+  by that release is `0.113513`, above the empirical gate of `0.10`.
+- This historical campaign predates the October 2026 corrections (constraints
+  on the controllable nodes 1..N, post-solve re-projection, enforced deadline
+  fallback, one-sided Clopper–Pearson gate, worst-trial timing gate). A new
+  50-seed campaign is required before quoting results for the current code.
 
 The result is therefore `VALIDATED_WITH_LIMITATIONS`; zero observed collisions
 must not be presented as a formal probabilistic guarantee. See the

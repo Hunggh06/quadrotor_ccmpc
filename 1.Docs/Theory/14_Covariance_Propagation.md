@@ -125,19 +125,27 @@ where:
 
 ### Key Coupling: $\frac{\partial \dot{\mathbf{v}}}{\partial \boldsymbol{\eta}}$
 
-This is the critical coupling that makes uncertainty grow. At hover ($\phi = \theta = 0, \psi = 0$):
+This is the critical coupling that makes uncertainty grow. The implemented
+velocity model (`control/ccmpc/dynamics.py`) is
 
-$$\frac{\partial \dot{v}_x}{\partial \theta} = g, \quad \frac{\partial \dot{v}_x}{\partial \phi} = 0$$
-$$\frac{\partial \dot{v}_y}{\partial \theta} = 0, \quad \frac{\partial \dot{v}_y}{\partial \phi} = -g$$
+$$\dot{v}_x = gF_\theta\cos\psi - gF_\phi\sin\psi - k_Dv_x,\qquad
+\dot{v}_y = gF_\theta\sin\psi + gF_\phi\cos\psi - k_Dv_y,$$
 
-At non-zero attitude angles, the trigonometric derivatives become more complex:
+with tilt factors $F_\theta=\tan\theta/(\cos\theta\,A)$, $F_\phi=\tan\phi/(\cos\phi\,A)$
+and $A=\sqrt{1+\tan^2\theta+\tan^2\phi}$. At level attitude
+($\phi=\theta=0$, so $\partial F_\theta/\partial\theta=\partial F_\phi/\partial\phi=1$):
 
-$$\frac{\partial \dot{v}_x}{\partial \theta} = g\sec^2\theta\cos\psi$$
-$$\frac{\partial \dot{v}_x}{\partial \phi} = g\sec^2\phi\sin\psi$$
+$$\frac{\partial \dot{v}_x}{\partial \theta} = g\cos\psi, \quad \frac{\partial \dot{v}_x}{\partial \phi} = -g\sin\psi$$
+$$\frac{\partial \dot{v}_y}{\partial \theta} = g\sin\psi, \quad \frac{\partial \dot{v}_y}{\partial \phi} = +g\cos\psi$$
 
-The remaining horizontal derivatives are:
+For $\psi = 0$ this gives $\partial\dot v_x/\partial\theta = g$, $\partial\dot v_y/\partial\phi = +g$ and
+zero cross terms. (Earlier revisions printed $-g$ for $\partial\dot v_y/\partial\phi$ and
+$+g\sec^2\phi\sin\psi$ for $\partial\dot v_x/\partial\phi$; both signs were inconsistent with the
+code, which is verified against finite differences.)
 
-$$\frac{\partial \dot{v}_y}{\partial \theta}=g\sec^2\theta\sin\psi,\qquad \frac{\partial \dot{v}_y}{\partial \phi}=-g\sec^2\phi\cos\psi.$$
+Away from level attitude the derivatives of $F_\theta, F_\phi$ also couple roll and pitch
+through $A$, so simple $\sec^2$ expressions are only approximations; the code
+differentiates the full expressions.
 
 ## 14.5 Why Last-Loop Trajectory?
 

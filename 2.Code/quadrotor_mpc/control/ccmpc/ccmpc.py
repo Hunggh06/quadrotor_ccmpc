@@ -421,12 +421,20 @@ class CCMPC:
     ) -> None:
         """Set CVXPY parameters for one chance constraint (DPP-compliant).
 
+        Linearisation of Zhu & Alonso-Mora (2019): with ``y = L (p - p_o)``
+        and ``L = Omega^(1/2)``, the normal is taken in the transformed space,
+        ``n = y / ||y||``, so ``n^T L (p - p_o) - 1 >= beta * sigma`` is the
+        tangent plane of the unit sphere ``||y|| = 1`` at the guess.  The
+        previous Euclidean normal ``(p - p_o)/||p - p_o||`` is not tangent for
+        anisotropic or rotated ellipsoids and disagreed with
+        ``chance_constraint_residual``.
+
         Computes a = n^T @ L (row vector) and folds a @ p_obs into
         the RHS to avoid Parameter @ Parameter expressions.
         """
-        diff = p_mav_guess - p_obs
-        dist = np.linalg.norm(diff)
-        n_o = diff / dist if dist >= 1e-6 else np.array([1.0, 0.0, 0.0])
+        transformed = L @ (p_mav_guess - p_obs)
+        metric = float(np.linalg.norm(transformed))
+        n_o = transformed / metric if metric >= 1e-9 else np.array([1.0, 0.0, 0.0])
 
         rhs = chance_constraint_rhs(L, Sigma_mav, Sigma_obs, n_o, self.delta)
         a_vec = n_o @ L
@@ -461,7 +469,7 @@ class CCMPC:
         for k in range(self.control_horizon):
             p_mav = x_guess[:3, k + 1]
             # Same time base as the constrained state x[:3, k+1].
-            p_obs = obs.p_hat + obs.v_hat * self.dt * (k + 1)
+            p_obs, _ = obs.predicted_mean_and_covariance((k + 1) * self.dt)
             diff = p_mav - p_obs
             d = float(np.linalg.norm(diff))
 
@@ -803,13 +811,9 @@ class CCMPC:
             Omega = Omega_matrix(obs.axes, self.mav_radius, obs.R_o)
             L_const = Omega_half(Omega)
 
-            pos = obs.p_hat.copy()
-            vel = obs.v_hat.copy()
-            Sigma = obs.Sigma.copy()
             for k in range(N):
-                # Advance to t = (k+1)*dt before recording step k.
-                pos = pos + vel * self.dt
-                Sigma = Sigma + obs.Sigma_v * self.dt**2
+                # Step k constrains x[:3, k+1], i.e. t = (k+1)*dt.
+                pos, Sigma = obs.predicted_mean_and_covariance((k + 1) * self.dt)
                 obs_predictions[k].append(
                     dict(
                         pos=pos.copy(),

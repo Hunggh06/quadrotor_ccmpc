@@ -504,7 +504,8 @@ class TimingAggregationTests(unittest.TestCase):
             timing["total_controller_time_ms"]["count_available_trials"],
             1,
         )
-        self.assertEqual(timing["nlp_solve_time_ms"]["p95_ms"], 19.5)
+        self.assertEqual(timing["nlp_solve_time_ms"]["per_trial_p95_ms"]["mean"], 19.5)
+        self.assertNotIn("p95_ms", timing["nlp_solve_time_ms"])
         self.assertEqual(
             aggregate["timing_schema"]["clock"],
             "time.perf_counter_ns",

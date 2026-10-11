@@ -14,6 +14,7 @@ from quadrotor_mpc.control.nmpc.chance_constraints import (
 )
 from quadrotor_mpc.control.nmpc.core import (
     DRONE_RADIUS,
+    FIRST_CONSTRAINED_NODE,
     INPUT_NAMES,
     STATE_NAMES,
     build_controller,
@@ -42,6 +43,15 @@ from quadrotor_mpc.core.contracts import (
     VehicleBelief,
 )
 from quadrotor_mpc.core.timing import TimingRecorder
+
+
+def _constrained_mask(
+    steps: int, obstacles: int, first: int = FIRST_CONSTRAINED_NODE
+) -> np.ndarray:
+    """Nodes the NLP actually constrains (node 0 is the fixed measured state)."""
+    mask = np.ones((int(steps), int(obstacles)), dtype=bool)
+    mask[: max(0, min(int(first), int(steps))), :] = False
+    return mask
 
 
 def _extract_nominal_states(mpc, fallback_state: np.ndarray) -> np.ndarray:
@@ -334,6 +344,7 @@ class DeterministicNMPCController:
                 base_safety_radii_m=base_safety_radii,
                 options=self._chance_options,
                 timing_recorder=timing_recorder,
+                first_constrained_step=FIRST_CONSTRAINED_NODE,
             )
 
             self._validate_profile_shapes(
@@ -364,7 +375,7 @@ class DeterministicNMPCController:
                     projected_sigma=chance_profile.projected_sigmas_m,
                     tightening_margin=chance_profile.tightenings_m,
                     tightened_radius=chance_profile.safety_radii_m,
-                    active_mask=np.ones((prediction_steps, len(obstacles)), dtype=bool),
+                    active_mask=_constrained_mask(prediction_steps, len(obstacles)),
                     joint_budget=chance_profile.configured_total_epsilon,
                     allocated_budget=chance_profile.allocated_epsilon,
                     remaining_budget=chance_profile.remaining_epsilon,
@@ -456,16 +467,23 @@ class DeterministicNMPCController:
         used_risks = chance_profile.risk_allocations
         used_safety_radii = chance_profile.safety_radii_m
         used_risk_metadata = chance_profile
+        evaluation_radii = used_safety_radii
         with timing_recorder.measure("post_solve_diagnostic_time_ms"):
             post_solve_diagnostic_profile = None
-            if horizon_length != prediction_steps and self._chance_options.enabled:
-                # Post-solve diagnostic: re-evaluate the chance profile on the
-                # optimized trajectory.  This is never written back into the
-                # enforced fields above, which must describe what the solver
-                # actually received.
+            resampled = horizon_length != prediction_steps
+            if resampled:
+                # The optimiser returned a different node count (e.g. the
+                # prediction could not be read back).  Resample obstacle means
+                # and the ENFORCED display fields onto the returned nodes.
                 target = np.linspace(0.0, 1.0, horizon_length)
                 source = np.linspace(0.0, 1.0, prediction_steps)
-                diagnostic_obstacle_predictions = np.asarray(
+
+                def resample(values: np.ndarray) -> np.ndarray:
+                    return np.column_stack(
+                        [np.interp(target, source, values[:, i]) for i in range(len(obstacles))]
+                    ).reshape(horizon_length, len(obstacles))
+
+                used_obstacle_predictions = np.asarray(
                     [
                         np.column_stack(
                             [np.interp(target, source, positions[:, axis]) for axis in range(3)]
@@ -473,14 +491,29 @@ class DeterministicNMPCController:
                         for positions in obstacle_predictions
                     ],
                     dtype=float,
-                )
+                ).reshape(len(obstacles), horizon_length, 3)
+                used_sigmas = resample(chance_profile.projected_sigmas_m)
+                used_risks = resample(chance_profile.risk_allocations)
+                used_safety_radii = resample(chance_profile.safety_radii_m)
+                evaluation_radii = used_safety_radii
+            if self._chance_options.enabled and len(obstacles):
+                # Post-solve check, run on EVERY solve: the enforced radii were
+                # built by projecting covariance on the SEED trajectory's
+                # collision normals, while the solver moved the trajectory.
+                # Re-projecting on the optimised trajectory gives the radius the
+                # chance requirement actually needs at the solution; margins and
+                # slacks are evaluated against it, so a seed/solution normal
+                # mismatch shows up as slack instead of being hidden.  The
+                # enforced fields keep describing what the solver received.
+                diagnostic_first = min(FIRST_CONSTRAINED_NODE, horizon_length - 1)
                 diagnostic_metadata = build_spherical_chance_profile(
                     vehicle_positions=nominal_states[:, :3],
-                    obstacle_positions=diagnostic_obstacle_predictions,
+                    obstacle_positions=used_obstacle_predictions,
                     vehicle_covariances=predicted_covariances,
                     obstacle_covariances=predicted_obstacle_covariances,
                     base_safety_radii_m=base_safety_radii,
                     options=self._chance_options,
+                    first_constrained_step=diagnostic_first,
                 )
                 post_solve_diagnostic_profile = build_chance_profile_snapshot(
                     control_tick=0,
@@ -495,50 +528,17 @@ class DeterministicNMPCController:
                     projected_sigma=diagnostic_metadata.projected_sigmas_m,
                     tightening_margin=diagnostic_metadata.tightenings_m,
                     tightened_radius=diagnostic_metadata.safety_radii_m,
-                    active_mask=np.ones((horizon_length, len(obstacles)), dtype=bool),
+                    active_mask=_constrained_mask(
+                        horizon_length, len(obstacles), first=diagnostic_first
+                    ),
                     joint_budget=diagnostic_metadata.configured_total_epsilon,
                     allocated_budget=diagnostic_metadata.allocated_epsilon,
                     remaining_budget=diagnostic_metadata.remaining_epsilon,
                 )
-                # Legacy display fields are resampled from the ENFORCED profile so
-                # they keep the solver's constraint shape, while the diagnostic
-                # profile keeps its own rebuilt values under a separate field.
-                target = np.linspace(0.0, 1.0, horizon_length)
-                source = np.linspace(0.0, 1.0, prediction_steps)
-                used_sigmas = np.column_stack(
-                    [
-                        np.interp(
-                            target,
-                            source,
-                            chance_profile.projected_sigmas_m[:, index],
-                        )
-                        for index in range(len(obstacles))
-                    ]
-                )
-                used_risks = np.column_stack(
-                    [
-                        np.interp(
-                            target,
-                            source,
-                            chance_profile.risk_allocations[:, index],
-                        )
-                        for index in range(len(obstacles))
-                    ]
-                )
-                used_safety_radii = np.column_stack(
-                    [
-                        np.interp(
-                            target,
-                            source,
-                            chance_profile.safety_radii_m[:, index],
-                        )
-                        for index in range(len(obstacles))
-                    ]
-                )
-                used_obstacle_predictions = diagnostic_obstacle_predictions
-                evaluation_radii = used_safety_radii
-            else:
-                evaluation_radii = used_safety_radii
+                evaluation_radii = diagnostic_metadata.safety_radii_m
+            # Row 0 is the measured current state: its radius is the untightened
+            # base radius (zero risk), so a positive slack there means the
+            # vehicle is already inside the deterministic safety distance.
             margins, slacks = evaluate_spherical_constraints(
                 vehicle_positions=nominal_states[:, :3],
                 obstacle_positions=used_obstacle_predictions,

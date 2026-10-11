@@ -282,11 +282,12 @@ class InteractiveLoopTests(unittest.TestCase):
             chance_options=config.chance_constraints,
         )
         self.assertEqual(len(result["t"]), 2)
-        expected_cell_risk = 0.10 / ((4 + 1) * len(config.obstacles))
-        np.testing.assert_allclose(
-            result["risk_allocation_horizon"],
-            expected_cell_risk,
-        )
+        # The joint budget is spread over the N constrained nodes 1..N; node 0
+        # (the measured current state) is not a decision constraint.
+        expected_cell_risk = 0.10 / (4 * len(config.obstacles))
+        allocation = np.asarray(result["risk_allocation_horizon"])
+        np.testing.assert_allclose(allocation[:, 0, :], 0.0)
+        np.testing.assert_allclose(allocation[:, 1:, :], expected_cell_risk)
         np.testing.assert_allclose(result["risk_budget_total"], 0.10)
         np.testing.assert_allclose(result["risk_budget_allocated"], 0.10)
         np.testing.assert_allclose(result["risk_budget_remaining"], 0.0, atol=1e-12)

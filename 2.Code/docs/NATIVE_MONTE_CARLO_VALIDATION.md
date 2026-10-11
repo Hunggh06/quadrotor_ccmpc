@@ -24,10 +24,12 @@ simulator and validation metrics, never as hidden controller input.
 | Controller | `deterministic`, `individual`, `joint` |
 | Covariance | `0.25 Sigma`, `Sigma`, `4 Sigma` |
 | Trials | 50 paired seeds per cell |
-| Confidence interval | Wilson 95% |
+| Collision bound (gate) | one-sided exact Clopper–Pearson, 95% |
+| Descriptive intervals | two-sided Wilson 95% for every rate |
+| Paired tests | exact McNemar (collision, success), Holm-adjusted across cells |
 | Plant duration | inherited from `mujoco_native_ccmpc.yaml` |
 | Empirical collision gate | upper CI at most 0.10 |
-| Timing gate | trial-p99 distribution versus the 50 ms control period |
+| Timing gate | worst trial: max over trials of per-trial p99 ≤ 50 ms |
 
 If covariance is multiplied by \(s\), every corresponding standard deviation
 is multiplied by \(\sqrt{s}\). This applies to measurement noise, filter
@@ -133,10 +135,28 @@ controller/noise cells: 270 complete episodes.
   configured threshold, despite zero geometric collisions;
 - overall status: `VALIDATED_WITH_LIMITATIONS`.
 
-Thirty trials satisfy the descriptive sample-size rule, but zero observed
-collisions still gives a Wilson 95% upper bound of `0.113513`. The default
-50-trial protocol is retained because zero collisions would then lower the
-bound below the `0.10` empirical gate. Positive slack, fallback and the failed
+Thirty trials satisfy the descriptive sample-size rule. Under the rules of
+that release, zero observed collisions gave a two-sided Wilson 95% upper bound
+of `0.113513`, above the `0.10` gate.
+
+## Statistical rules (fixed before new campaigns)
+
+- The collision gate uses the one-sided exact Clopper–Pearson upper bound
+  (`statistics.collision_bound_method: clopper_pearson_one_sided`). It is
+  conservative for every true rate; the safety question is one-sided. With
+  zero collisions the bound is `1 - (1 - c)^(1/n)`: `0.0950` for 30 trials and
+  `0.0582` for 50. `wilson_two_sided` remains selectable to re-grade legacy
+  artifacts, and the protocol fingerprint records the choice.
+- Paired comparisons against the deterministic controller report an exact
+  McNemar test on discordant seeds for collision and success, with Holm
+  step-down adjustment over all (noise level, controller) cells.
+- Timing: `timing_percentile` selects the per-trial statistic (p95 or p99);
+  the gate requires the worst trial to fit in the control period and fails
+  when any trial lacks timing samples. Aggregate timing summaries are named
+  `per_trial_<stat>` with `mean`/`median`/`max` across trials.
+- These rules were changed before the next campaign was run and must not be
+  changed after seeing its results. The default 50-trial protocol is
+  retained. Positive slack, fallback and the failed
 50 ms timing gate independently block a probability claim in the verified
 campaign.
 

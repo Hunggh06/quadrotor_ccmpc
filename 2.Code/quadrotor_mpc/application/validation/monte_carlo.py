@@ -135,6 +135,7 @@ class NativeMonteCarloProtocol:
     require_zero_budget_failures: bool
     timing_percentile: float
     protocol_type: str = "algorithmic_comparison"
+    collision_bound_method: str = "clopper_pearson_one_sided"
     control_period_ms: float = 50.0
     deadline_clock: str = "solver_only"
     requested_modes: tuple[str, ...] = ()
@@ -157,6 +158,11 @@ class NativeMonteCarloProtocol:
         _probability(self.timing_percentile, "validation.timing_percentile")
         if not any(math.isclose(self.timing_percentile, supported) for supported in (0.95, 0.99)):
             raise ValueError("validation.timing_percentile must be 0.95 or 0.99")
+        if self.collision_bound_method not in COLLISION_BOUND_METHODS:
+            raise ValueError(
+                "statistics.collision_bound_method must be one of "
+                f"{sorted(COLLISION_BOUND_METHODS)}"
+            )
         if not self.modes:
             raise ValueError("modes must contain at least one controller")
         unsupported = set(self.modes) - set(CANONICAL_MODES)
@@ -247,6 +253,7 @@ class NativeMonteCarloProtocol:
             "statistics": {
                 "confidence_level": self.confidence_level,
                 "minimum_trials_for_claim": self.minimum_trials_for_claim,
+                "collision_bound_method": self.collision_bound_method,
             },
             "validation": {
                 "empirical_collision_rate_limit": (self.empirical_collision_rate_limit),
@@ -315,6 +322,9 @@ def load_native_monte_carlo_protocol(
         first_seed=int(root.get("first_seed", 1000)),
         confidence_level=float(statistics.get("confidence_level", 0.95)),
         minimum_trials_for_claim=int(statistics.get("minimum_trials_for_claim", 30)),
+        collision_bound_method=str(
+            statistics.get("collision_bound_method", "clopper_pearson_one_sided")
+        ),
         empirical_collision_rate_limit=float(
             validation.get("empirical_collision_rate_limit", 0.10)
         ),
@@ -1228,6 +1238,65 @@ def wilson_interval(
     return [max(0.0, center - half), min(1.0, center + half)]
 
 
+COLLISION_BOUND_METHODS = frozenset({"clopper_pearson_one_sided", "wilson_two_sided"})
+
+
+def clopper_pearson_upper(
+    events: int,
+    total: int,
+    confidence_level: float = 0.95,
+) -> float:
+    """Exact one-sided Clopper–Pearson upper bound for a Bernoulli rate.
+
+    ``P(rate <= bound) >= confidence_level`` holds for every true rate (the
+    interval is conservative, not approximate).  With zero events this is
+    ``1 - (1 - confidence_level) ** (1 / total)``.
+    """
+    from scipy.stats import beta
+
+    if total <= 0:
+        return 1.0
+    confidence_level = _probability(confidence_level, "confidence_level")
+    events = int(events)
+    if not 0 <= events <= total:
+        raise ValueError("events must lie in [0, total]")
+    if events == total:
+        return 1.0
+    return float(beta.ppf(confidence_level, events + 1, total - events))
+
+
+def mcnemar_exact(baseline_only: int, compared_only: int) -> dict[str, Any]:
+    """Exact (binomial) two-sided McNemar test on paired binary outcomes.
+
+    Only discordant pairs carry information; under H0 each discordant pair is
+    equally likely to favour either controller.
+    """
+    from scipy.stats import binomtest
+
+    b = int(baseline_only)
+    c = int(compared_only)
+    discordant = b + c
+    p_value = 1.0 if discordant == 0 else float(binomtest(b, discordant, 0.5).pvalue)
+    return {
+        "baseline_only": b,
+        "compared_only": c,
+        "discordant_pairs": discordant,
+        "p_value_exact_two_sided": p_value,
+    }
+
+
+def _holm_adjust(p_values: Sequence[float]) -> list[float]:
+    """Holm–Bonferroni step-down adjusted p-values (family-wise error)."""
+    count = len(p_values)
+    order = sorted(range(count), key=lambda index: p_values[index])
+    adjusted = [1.0] * count
+    running = 0.0
+    for rank, index in enumerate(order):
+        running = max(running, min(1.0, (count - rank) * float(p_values[index])))
+        adjusted[index] = running
+    return adjusted
+
+
 def _numeric_summary(values: Iterable[float]) -> dict[str, float] | None:
     array = np.asarray(list(values), dtype=float)
     array = array[np.isfinite(array)]
@@ -1259,6 +1328,9 @@ def _rate_summary(
         "trials": len(items),
         "rate": events / len(items),
         "ci": wilson_interval(events, len(items), confidence_level),
+        "ci_method": "wilson_two_sided",
+        "upper_bound_one_sided": clopper_pearson_upper(events, len(items), confidence_level),
+        "upper_bound_method": "clopper_pearson_one_sided",
     }
 
 
@@ -1279,24 +1351,34 @@ def _timing_group_summary(
             output[field] = {
                 "count_available_trials": 0,
                 "count_missing_trials": len(items),
-                "mean_ms": None,
-                "median_ms": None,
-                "p95_ms": None,
-                "p99_ms": None,
-                "max_ms": None,
+                **{
+                    f"per_trial_{key}": None
+                    for key in ("mean_ms", "median_ms", "p95_ms", "p99_ms", "max_ms")
+                },
             }
             continue
-        pooled: dict[str, list[float]] = {
+        # Each trial contributes one value per statistic; summarise those values
+        # *across trials*.  The keys say so explicitly: a mean of per-trial p99
+        # values is not a pooled p99 and must not be labelled ``p99_ms``.
+        per_trial: dict[str, list[float]] = {
             key: [] for key in ("mean_ms", "median_ms", "p95_ms", "p99_ms", "max_ms")
         }
         for entry in available:
-            for key in pooled:
+            for key in per_trial:
                 value = entry.get(key)
                 if value is not None:
-                    pooled[key].append(float(value))
-        summary: dict[str, float | None] = {}
-        for key, values in pooled.items():
-            summary[key] = float(np.mean(values)) if values else None
+                    per_trial[key].append(float(value))
+        summary: dict[str, Any] = {}
+        for key, values in per_trial.items():
+            summary[f"per_trial_{key}"] = (
+                {
+                    "mean": float(np.mean(values)),
+                    "median": float(np.median(values)),
+                    "max": float(np.max(values)),
+                }
+                if values
+                else None
+            )
         output[field] = {
             "count_available_trials": len(available),
             "count_missing_trials": len(items) - len(available),
@@ -1316,7 +1398,11 @@ def _group_gates(
     enough_trials = len(items) >= protocol.minimum_trials_for_claim
     execution_ok = all(item.completed and not item.numerical_failure for item in items)
     budget_ok = all(item.budget_failure_ticks == 0 for item in items)
-    collision_upper = float(summary["collision_rate"]["ci"][1])
+    collision_upper = (
+        float(summary["collision_rate"]["upper_bound_one_sided"])
+        if protocol.collision_bound_method == "clopper_pearson_one_sided"
+        else float(summary["collision_rate"]["ci"][1])
+    )
     empirical_collision_ok = (
         enough_trials and collision_upper <= protocol.empirical_collision_rate_limit
     )
@@ -1325,13 +1411,15 @@ def _group_gates(
     timing_field = (
         "p95_solver_ms" if math.isclose(protocol.timing_percentile, 0.95) else "p99_solver_ms"
     )
-    timing_summary = summary[timing_field]
-    timing_value = float(timing_summary["p95"]) if timing_summary is not None else float("inf")
-    # Every trial must carry timing evidence; trials without finite samples are
-    # dropped by _numeric_summary and would otherwise be silently ignored.
-    timing_evidence_complete = all(
-        math.isfinite(float(getattr(item, timing_field))) for item in items
-    )
+    # Worst-trial rule: every episode's per-trial percentile must fit in the
+    # control period.  (The former gate used the p95 across trials of per-trial
+    # p99 values while being labelled "p99".)  Every trial must also carry
+    # timing evidence; trials without finite samples would otherwise be
+    # silently ignored.
+    per_trial_timing = [float(getattr(item, timing_field)) for item in items]
+    timing_evidence_complete = all(math.isfinite(value) for value in per_trial_timing)
+    finite_timing = [value for value in per_trial_timing if math.isfinite(value)]
+    timing_value = max(finite_timing) if finite_timing else float("inf")
     timing_ok = timing_evidence_complete and timing_value <= controller_period_ms
     # A real-time qualification claim requires the realtime protocol, an
     # end-to-end deadline clock, and the timing gate.  Algorithmic runs are
@@ -1386,18 +1474,21 @@ def _group_gates(
         "empirical_collision_bound": (
             "PASS" if empirical_collision_ok else ("INSUFFICIENT" if not enough_trials else "FAIL")
         ),
-        "real_time_p99": "PASS" if timing_ok else "FAIL",
+        "real_time": "PASS" if timing_ok else "FAIL",
         "realtime_claim_eligible": realtime_claim_eligible,
         "claim_status": claim_status,
         "claim_blockers": claim_blockers if mode != "deterministic" else [],
         "validation_status": validation_status,
         "details": {
-            "collision_ci_upper": collision_upper,
+            "collision_upper_bound": collision_upper,
+            "collision_bound_method": protocol.collision_bound_method,
+            "confidence_level": protocol.confidence_level,
             "collision_rate_limit": protocol.empirical_collision_rate_limit,
             "positive_slack_episodes": positive_slack_episodes,
             "fallback_episodes": fallback_episodes,
             "timing_percentile": protocol.timing_percentile,
-            "timing_across_trials_p95_ms": (timing_value if math.isfinite(timing_value) else None),
+            "timing_statistic": f"max_over_trials({timing_field})",
+            "timing_worst_trial_ms": (timing_value if math.isfinite(timing_value) else None),
             "timing_evidence_complete": timing_evidence_complete,
             "controller_period_ms": controller_period_ms,
         },
@@ -1559,7 +1650,7 @@ def aggregate_native_trials(
         "fallback_application_rate",
     )
     output: dict[str, Any] = {
-        "schema_version": 3,
+        "schema_version": 4,
         "collision_schema_version": 1,
         "timing_schema": dict(TIMING_SCHEMA_METADATA),
         "mode_schema_version": 2,
@@ -1748,8 +1839,36 @@ def aggregate_native_trials(
                         for seed in common
                     ),
                 },
+                "paired_tests": {
+                    outcome: mcnemar_exact(
+                        sum(
+                            getattr(deterministic[seed], outcome)
+                            and not getattr(compared[seed], outcome)
+                            for seed in common
+                        ),
+                        sum(
+                            getattr(compared[seed], outcome)
+                            and not getattr(deterministic[seed], outcome)
+                            for seed in common
+                        ),
+                    )
+                    for outcome in ("collision", "success")
+                },
             }
         output["noise_levels"][level.label] = level_output
+
+    # Holm correction across every (noise level, controller) comparison of the
+    # same outcome, so scanning many cells does not inflate false positives.
+    for outcome in ("collision", "success"):
+        tests = [
+            comparison["paired_tests"][outcome]
+            for level in output["noise_levels"].values()
+            for comparison in level["paired_comparisons"].values()
+        ]
+        adjusted = _holm_adjust([test["p_value_exact_two_sided"] for test in tests])
+        for test, value in zip(tests, adjusted):
+            test["p_value_holm"] = value
+            test["holm_family_size"] = len(tests)
 
     groups = [
         summary
@@ -1764,7 +1883,7 @@ def aggregate_native_trials(
     ]
     execution_ok = all(summary["gates"]["execution_integrity"] == "PASS" for summary in groups)
     enough_samples = all(summary["gates"]["sample_size"] == "PASS" for summary in groups)
-    real_time_ok = all(summary["gates"]["real_time_p99"] == "PASS" for summary in groups)
+    real_time_ok = all(summary["gates"]["real_time"] == "PASS" for summary in groups)
     claims_supported = bool(chance_groups) and all(
         summary["gates"]["claim_status"] == "EMPIRICALLY_SUPPORTED_NOT_PROVEN"
         for summary in chance_groups

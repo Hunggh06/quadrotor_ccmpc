@@ -226,6 +226,7 @@ def build_spherical_chance_profile(
     base_safety_radii_m: np.ndarray,
     options: ChanceConstraintOptions,
     timing_recorder: TimingRecorder | None = None,
+    first_constrained_step: int = 0,
 ) -> SphericalChanceProfile:
     """Project relative covariance and build deterministic tightened radii.
 
@@ -290,6 +291,7 @@ def build_spherical_chance_profile(
             enabled=options.enabled,
             individual_epsilon=options.individual_epsilon,
             options=options.risk_budget,
+            first_constrained_step=first_constrained_step,
         )
     tightening_context = (
         timing_recorder.measure("tightening_time_ms")

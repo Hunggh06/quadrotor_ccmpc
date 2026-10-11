@@ -61,7 +61,10 @@ class EllipsoidalObstacle:
         self.Sigma_v: npt.NDArray[np.float64] = np.diag([vel_uncertainty**2] * 3)
 
     def predict(self, dt: float) -> None:
-        r"""Constant-velocity prediction (Eq 6).
+        r"""Tracker time update between measurements (paper Eq 6).
+
+        This advances the *estimate* in place.  Horizon predictions inside the
+        controllers must use :meth:`predicted_mean_and_covariance` instead.
 
         .. math::
 
@@ -70,6 +73,29 @@ class EllipsoidalObstacle:
         """
         self.p_hat += self.v_hat * dt
         self.Sigma += self.Sigma_v * dt**2
+
+    def predicted_mean_and_covariance(
+        self,
+        elapsed_s: float,
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        r"""Open-loop constant-velocity prediction over ``elapsed_s`` seconds.
+
+        .. math::
+
+            \hat{p}(t) = \hat{p} + \hat{v}\,t, \qquad
+            \Sigma(t) = \Sigma + t^2\,\Sigma_v
+
+        ``Sigma_v`` is the velocity-estimate covariance, so a constant but
+        uncertain velocity produces position covariance growing with
+        :math:`t^2` (Theory Ch. 14.8, cross-covariance neglected).  This single
+        definition is shared by the CC-MPC constraint and the ODE residual
+        checker; the recursive ``Sigma += Sigma_v * dt**2`` form grows only
+        linearly in the step count and made the two disagree.
+        """
+        elapsed = float(elapsed_s)
+        mean = self.p_hat + self.v_hat * elapsed
+        covariance = self.Sigma + self.Sigma_v * elapsed**2
+        return mean, covariance
 
     def get_normal(self, p_mav: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         r"""Unit normal vector from obstacle to MAV.

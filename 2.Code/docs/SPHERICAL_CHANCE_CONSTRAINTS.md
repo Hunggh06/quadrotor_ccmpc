@@ -76,7 +76,11 @@ optimized nominal solution.
 5. Compute collision normals, projected sigma and tightened radii.
 6. Allocate risk and fill do-mpc TVPs for mean, sigma, beta, risk and radius.
 7. Solve the native NMPC once.
-8. Record chance residual, slack, risk, covariance and solver classification.
+8. Re-project the same covariances on the **optimized** trajectory's collision
+   normals (post-solve profile, every solve) and evaluate margins and slack
+   against those radii. The enforced radii used the seed normals; any
+   shortfall caused by the solver moving the trajectory is reported as slack.
+9. Record chance residual, slack, risk, covariance and solver classification.
 
 This is one outer covariance iteration. Re-solving repeatedly after updating
 the nominal trajectory is intentionally deferred.
@@ -122,11 +126,16 @@ Fallback and emergency statuses are not implemented through Stage 5.
 
 - Gaussian local position errors.
 - Vehicle and obstacle errors are independent; cross-covariance is zero.
-- Collision normal is frozen from the shifted nominal trajectory.
+- Collision normal is frozen from the shifted nominal trajectory for the
+  enforced constraint; the post-solve check re-projects on the solution's
+  normals but does not re-solve.
+- Row 0 of every horizon array is the measured current state. It carries zero
+  risk and the untightened base radius; positive slack there means the vehicle
+  is already inside the deterministic safety distance.
 - In `individual` mode, every horizon-step/obstacle pair uses the same
   `individual_epsilon`; this is not a joint statement.
-- In `joint` mode, the uniform allocator accounts for every \(N+1\) NLP state
-  node and obstacle. The budget applies to one prediction horizon, not the
+- In `joint` mode, the uniform allocator accounts for every constrained node
+  \(1..N\) and obstacle (\(N\,n_{\mathrm{obs}}\) cells). The budget applies to one prediction horizon, not the
   complete receding-horizon episode.
 - Spherical obstacle geometry only.
 - Positive slack invalidates the chance guarantee and is never hidden.

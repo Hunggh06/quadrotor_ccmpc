@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased — Correctness review (October 2026)
+
+Validation semantics changed; the committed Stage 8 artifact is historical and
+must not be compared gate-for-gate with new campaigns.
+
+Native NMPC / validation
+- Obstacle chance constraints now act on the controllable nodes `x_1..x_N`
+  (do-mpc stage `k` constrains `x_{k+1} = f(x_k, u_k)`; stage TVPs carry node
+  `k+1`). Previously `x_0` (fixed, uncontrollable) was constrained and `x_N`
+  was not. The joint budget is split over `N * n_obs` cells; node 0 gets zero
+  risk and the untightened radius.
+- Post-solve re-projection runs on every chance solve: margins and slack are
+  evaluated against covariance projected on the optimized trajectory's
+  normals, so seed/solution normal mismatch surfaces as slack.
+- Realtime protocol: an end-to-end deadline miss now applies the fallback
+  command to the plant (`SafeFallbackController.apply_deadline_fallback`);
+  recorded dispositions are reconciled with the applied command.
+- Collision gate uses a one-sided exact Clopper–Pearson bound
+  (`statistics.collision_bound_method`, Wilson still reported); paired exact
+  McNemar tests with Holm adjustment; timing gate is worst-trial per-trial p99
+  and fails on missing timing samples; timing summaries renamed
+  `per_trial_<stat>`; aggregate `schema_version` 4; gate key `real_time`.
+- `ChanceProfile` active epsilon must lie in (0, 0.5).
+
+9-state CVXPY CC-MPC
+- Obstacle prediction time-aligned with the constrained state `x_{k+1}`.
+- iMPC restart resets the iteration counter, re-propagates covariance, treats
+  solver exceptions as failures and never returns an unsolved seed.
+- Covariance propagation uses the configured timestep.
+- Constrains the `max_obstacles` obstacles with the closest time-aligned
+  approach instead of the first in list order.
+- Linearized chance constraint uses the transformed-space normal (Zhu &
+  Alonso-Mora 2019), tangent to the collision ellipsoid.
+- Obstacle horizon covariance is `Sigma + t^2 Sigma_v` in both the controller
+  and the ODE residual checker.
+- Removed dead `_problem.py`, `ObstacleManager.predict_horizon`.
+
+Tooling and docs
+- CI formatting fixed; experiment-explorer test is hermetic
+  (`QUADROTOR_MPC_RUNS_ROOT`).
+- Process noise documented as continuous intensity (`W_d = W_c * dt`);
+  Theory Ch. 14 attitude-coupling signs corrected and tested.
+
 ## Unreleased — Layered package architecture
 
 - Moved every executable module from the `2.Code` root into the installable

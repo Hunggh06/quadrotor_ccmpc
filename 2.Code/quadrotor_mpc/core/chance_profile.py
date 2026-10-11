@@ -140,8 +140,10 @@ class ChanceProfile:
                 raise ChanceProfileShapeError(
                     f"{label} must have shape {expected}, got {array.shape}"
                 )
-        if np.any(epsilon[active] <= 0.0) or np.any(epsilon[active] >= 1.0):
-            raise ValueError("active epsilon values must lie in (0, 1)")
+        # One-sided Gaussian tightening needs epsilon < 0.5 (non-negative
+        # quantile); this matches the risk allocator and chance options.
+        if np.any(epsilon[active] <= 0.0) or np.any(epsilon[active] >= 0.5):
+            raise ValueError("active epsilon values must lie in (0, 0.5)")
         object.__setattr__(self, "epsilon", epsilon)
         object.__setattr__(self, "projected_sigma", sigma)
         object.__setattr__(self, "tightening_margin", margin)
@@ -201,8 +203,11 @@ def build_chance_profile_snapshot(
 ) -> ChanceProfile:
     """Build a frozen :class:`ChanceProfile` with derived identity.
 
-    The profile id is a deterministic digest of the canonical payload so the
-    same values always produce the same id across processes and ticks.
+    The profile id is a deterministic digest of the canonical payload, so it
+    is reproducible across processes.  The payload includes the solve attempt
+    id, phase and trajectory source: identical numerical values from two
+    different solve attempts (or enforced vs post-solve phases) therefore get
+    different ids by design.
     """
     provenance = ChanceProfileProvenance(
         control_tick=control_tick,

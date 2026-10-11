@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -424,14 +425,14 @@ class TimingEvidenceGateTests(unittest.TestCase):
         items[0] = trial("deterministic", 10, p99=float("nan"))
         aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
         gates = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]["gates"]
-        self.assertEqual(gates["real_time_p99"], "FAIL")
+        self.assertEqual(gates["real_time"], "FAIL")
         self.assertFalse(gates["details"]["timing_evidence_complete"])
 
     def test_complete_fast_timing_still_passes(self):
         items = [trial("deterministic", seed, p99=10.0) for seed in range(10, 40)]
         aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
         gates = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]["gates"]
-        self.assertEqual(gates["real_time_p99"], "PASS")
+        self.assertEqual(gates["real_time"], "PASS")
         self.assertTrue(gates["details"]["timing_evidence_complete"])
 
     def test_all_missing_timing_serializes_and_reports(self):
@@ -439,7 +440,84 @@ class TimingEvidenceGateTests(unittest.TestCase):
         aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
         level = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]
         self.assertIsNone(level["p99_solver_ms"])
-        self.assertIsNone(level["gates"]["details"]["timing_across_trials_p95_ms"])
+        self.assertIsNone(level["gates"]["details"]["timing_worst_trial_ms"])
+        json.dumps(aggregate, allow_nan=False)
+
+
+class StatisticsProtocolTests(unittest.TestCase):
+    """Clopper–Pearson gate, worst-trial timing and paired McNemar tests."""
+
+    def test_clopper_pearson_upper_matches_closed_form_for_zero_events(self):
+        from quadrotor_mpc.application.validation.monte_carlo import clopper_pearson_upper
+
+        for total in (10, 30, 50):
+            expected = 1.0 - 0.05 ** (1.0 / total)
+            self.assertAlmostEqual(clopper_pearson_upper(0, total, 0.95), expected, places=10)
+        self.assertAlmostEqual(clopper_pearson_upper(0, 30, 0.95), 0.0950, places=4)
+        self.assertEqual(clopper_pearson_upper(5, 5, 0.95), 1.0)
+        self.assertEqual(clopper_pearson_upper(0, 0, 0.95), 1.0)
+        # Monotone in the event count and always above the point estimate.
+        bounds = [clopper_pearson_upper(events, 30, 0.95) for events in range(31)]
+        self.assertEqual(bounds, sorted(bounds))
+        for events, bound in enumerate(bounds):
+            self.assertGreaterEqual(bound, events / 30)
+
+    def test_clopper_pearson_coverage_is_conservative(self):
+        from quadrotor_mpc.application.validation.monte_carlo import clopper_pearson_upper
+
+        rng = np.random.default_rng(0)
+        for rate in (0.02, 0.1, 0.3):
+            events = rng.binomial(30, rate, size=4000)
+            covered = np.mean([rate <= clopper_pearson_upper(int(e), 30, 0.95) for e in events])
+            self.assertGreaterEqual(covered, 0.95 - 0.01)
+
+    def test_mcnemar_exact_and_holm(self):
+        from quadrotor_mpc.application.validation.monte_carlo import _holm_adjust, mcnemar_exact
+
+        result = mcnemar_exact(5, 0)
+        self.assertEqual(result["discordant_pairs"], 5)
+        self.assertAlmostEqual(result["p_value_exact_two_sided"], 0.0625)
+        self.assertEqual(mcnemar_exact(0, 0)["p_value_exact_two_sided"], 1.0)
+        np.testing.assert_allclose(_holm_adjust([0.01, 0.04, 0.03]), [0.03, 0.06, 0.06])
+
+    def test_zero_collisions_in_30_trials_pass_one_sided_but_not_wilson(self):
+        items = [trial("deterministic", seed, p99=10.0) for seed in range(10, 40)]
+        aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
+        gates = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]["gates"]
+        self.assertEqual(gates["empirical_collision_bound"], "PASS")
+        self.assertAlmostEqual(gates["details"]["collision_upper_bound"], 0.0950, places=4)
+
+        legacy = replace(protocol(), collision_bound_method="wilson_two_sided")
+        aggregate = aggregate_native_trials(items, legacy, controller_period_ms=50.0)
+        gates = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]["gates"]
+        self.assertEqual(gates["empirical_collision_bound"], "FAIL")
+        self.assertAlmostEqual(gates["details"]["collision_upper_bound"], 0.113513, places=5)
+
+    def test_unknown_bound_method_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "collision_bound_method"):
+            replace(protocol(), collision_bound_method="normal_approximation")
+
+    def test_single_slow_trial_fails_worst_trial_timing_gate(self):
+        items = [trial("deterministic", seed, p99=10.0) for seed in range(10, 40)]
+        items[3] = trial("deterministic", 13, p99=60.0)
+        aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
+        gates = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]["gates"]
+        self.assertEqual(gates["real_time"], "FAIL")
+        self.assertEqual(gates["details"]["timing_worst_trial_ms"], 60.0)
+        self.assertEqual(gates["details"]["timing_statistic"], "max_over_trials(p99_solver_ms)")
+
+    def test_paired_mcnemar_reported_with_holm_adjustment(self):
+        items = [trial("deterministic", seed, collision=seed < 16) for seed in range(10, 40)] + [
+            trial("joint_uniform", seed) for seed in range(10, 40)
+        ]
+        aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
+        tests = aggregate["noise_levels"]["nominal"]["paired_comparisons"][
+            "joint_uniform_minus_deterministic"
+        ]["paired_tests"]
+        self.assertEqual(tests["collision"]["baseline_only"], 6)
+        self.assertEqual(tests["collision"]["compared_only"], 0)
+        self.assertAlmostEqual(tests["collision"]["p_value_exact_two_sided"], 2 * 0.5**6)
+        self.assertEqual(tests["collision"]["holm_family_size"], 1)
         json.dumps(aggregate, allow_nan=False)
 
 
