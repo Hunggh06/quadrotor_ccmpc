@@ -9,6 +9,13 @@ created: 2026-06-27
 
 # Quadrotor Chance-Constrained MPC — Map of Content
 
+> [!note] Language and code names
+> These chapters are in Vietnamese and written for Obsidian (dataview tables,
+> callouts). They predate the current package: `quadrotor_ccmpc` is now
+> `quadrotor_mpc`. For anything that must match the code, use the English
+> documentation in [`2.Code/docs/`](../../2.Code/docs/README.md) and the
+> [theory-to-code map](../../2.Code/docs/reference/theory-code-map.md).
+
 > [!abstract] Nguồn chính
 > - Zhu, H. & Alonso-Mora, J. (2019). *Chance-Constrained Collision Avoidance for MAVs in Dynamic Environments.* IEEE RA-L.
 > - Lin, J., Zhu, H. & Alonso-Mora, J. (2020). *Robust Vision-based Obstacle Avoidance for MAVs.* IEEE ICRA.

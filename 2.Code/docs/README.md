@@ -60,6 +60,9 @@ the 9-state track, 06–09 the native track.
 | Where each equation lives and which test checks it | [Theory-to-code map](reference/theory-code-map.md) |
 | Old import paths before the layered package | [Package migration](reference/package-migration.md) |
 | What each feature must pass before it is trusted | [Test strategy](validation/test-strategy.md) |
+| Why the main modelling, safety and statistics choices were made | [Design decisions](reference/design-decisions.md) |
+| What is still open, in priority order | [Roadmap](roadmap.md) |
+| Setup, CI checks and rules for results | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 
 ## Status at a glance
 

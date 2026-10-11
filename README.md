@@ -317,7 +317,17 @@ paths for newcomers, controller internals, experiments and code changes.
 | Know what a result may claim | [Claims and statistics](2.Code/docs/validation/claims-and-statistics.md) |
 | Change the code | [Architecture](2.Code/docs/reference/architecture.md) · [Controller interface](2.Code/docs/reference/controller-interface.md) |
 | Learn by running code | [Notebooks](3.Notebooks/README.md): nine notebooks from the 9-state model to Monte Carlo statistics |
-| Read the theory | [Theory chapters](1.Docs/Theory/README.md) |
+| Read the theory | [Theory chapters](1.Docs/Theory/README.md) (in Vietnamese, see note below) |
+| See what is still open and why the design is as it is | [Roadmap](2.Code/docs/roadmap.md) · [Design decisions](2.Code/docs/reference/design-decisions.md) |
+| Contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+> [!NOTE]
+> **Language.** Everything in this repository is in English except
+> `1.Docs/Theory/`, which is written in Vietnamese in Obsidian format and
+> still uses the earlier package name `quadrotor_ccmpc`. It is background
+> material (derivations of the dynamics, MPC and chance constraints), not kept
+> in sync with the code. For anything that must match the code, use the
+> English pages in `2.Code/docs/`.
 
 ## References
 

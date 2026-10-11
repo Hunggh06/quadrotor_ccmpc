@@ -35,6 +35,12 @@
   `QMPC_RUN_NOTEBOOKS=1` (CI), executes the track.
 - `run_headless_episode()` in `application/native/headless.py`: one-call
   Python API for a native episode (used by the CLI and the notebooks).
+- New `docs/roadmap.md` (open items in priority order),
+  `docs/reference/design-decisions.md` (why each modelling, safety and
+  statistics choice was made) and a root `CONTRIBUTING.md`. The README notes
+  that `1.Docs/Theory/` is Vietnamese background material.
+- CI executes the notebook track on Python 3.12; notebook figures are written
+  to the ignored `3.Notebooks/outputs/`.
 - Root README rewritten with figures generated from real runs
   (`assets/readme/`): MuJoCo flight GIF, horizon tightening, controller
   comparison, workbench GIF and screenshots.
