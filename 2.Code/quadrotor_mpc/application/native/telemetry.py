@@ -224,6 +224,8 @@ def step_to_sample(step: Any) -> dict[str, Any]:
         ),
         "risk_constraint_count": int(getattr(step, "risk_constraint_count", 0)),
         "risk_budget_status": str(getattr(step, "risk_budget_status", "")),
+        "achieved_risk_total": getattr(step, "achieved_risk_total", None),
+        "risk_certificate_status": str(getattr(step, "risk_certificate_status", "NOT_AVAILABLE")),
         "minimum_chance_residual_m": (
             None if chance_residuals.size == 0 else float(np.min(chance_residuals))
         ),
@@ -726,6 +728,8 @@ class NativeRunRecorder:
             "risk_budget_remaining",
             "risk_constraint_count",
             "risk_budget_status",
+            "achieved_risk_total",
+            "risk_certificate_status",
             "minimum_chance_residual_m",
             "maximum_slack_m",
             "maximum_projected_uncertainty_m",

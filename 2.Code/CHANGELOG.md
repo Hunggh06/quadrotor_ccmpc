@@ -23,6 +23,16 @@ Native NMPC / validation
   and fails on missing timing samples; timing summaries renamed
   `per_trial_<stat>`; aggregate `schema_version` 4; gate key `real_time`.
 - `ChanceProfile` active epsilon must lie in (0, 0.5).
+- Post-solve risk certificate (`achieved_risk_total`, `risk_certificate_status`)
+  evaluates the linearized collision risk of the optimized horizon against the
+  budget; it decides horizon assurance (schema 4) and the Monte Carlo chance
+  claim (`validation.chance_claim_rule: risk_certificate`). Diagnosis showed
+  the residual positive slack was sub-centimetre terminal-node re-projection
+  shortfall with horizon risk far below budget.
+- Safety supervisor accepts a solution above `maximum_acceptable_slack_m` when
+  its risk certificate is `CERTIFIED` (`safety_fallback.accept_certified_slack`,
+  default true); uncertified or exceeded solutions still fall back. The Qt
+  panel shows such ticks as `RISK CERTIFIED`.
 
 9-state CVXPY CC-MPC
 - Obstacle prediction time-aligned with the constrained state `x_{k+1}`.

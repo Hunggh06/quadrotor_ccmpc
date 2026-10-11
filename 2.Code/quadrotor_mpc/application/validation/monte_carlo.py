@@ -136,6 +136,7 @@ class NativeMonteCarloProtocol:
     timing_percentile: float
     protocol_type: str = "algorithmic_comparison"
     collision_bound_method: str = "clopper_pearson_one_sided"
+    chance_claim_rule: str = "risk_certificate"
     control_period_ms: float = 50.0
     deadline_clock: str = "solver_only"
     requested_modes: tuple[str, ...] = ()
@@ -158,6 +159,10 @@ class NativeMonteCarloProtocol:
         _probability(self.timing_percentile, "validation.timing_percentile")
         if not any(math.isclose(self.timing_percentile, supported) for supported in (0.95, 0.99)):
             raise ValueError("validation.timing_percentile must be 0.95 or 0.99")
+        if self.chance_claim_rule not in CHANCE_CLAIM_RULES:
+            raise ValueError(
+                f"validation.chance_claim_rule must be one of {sorted(CHANCE_CLAIM_RULES)}"
+            )
         if self.collision_bound_method not in COLLISION_BOUND_METHODS:
             raise ValueError(
                 "statistics.collision_bound_method must be one of "
@@ -258,6 +263,7 @@ class NativeMonteCarloProtocol:
             "validation": {
                 "empirical_collision_rate_limit": (self.empirical_collision_rate_limit),
                 "require_zero_positive_slack": self.require_zero_positive_slack,
+                "chance_claim_rule": self.chance_claim_rule,
                 "require_zero_fallback": self.require_zero_fallback,
                 "require_zero_budget_failures": self.require_zero_budget_failures,
                 "timing_percentile": self.timing_percentile,
@@ -329,6 +335,7 @@ def load_native_monte_carlo_protocol(
             validation.get("empirical_collision_rate_limit", 0.10)
         ),
         require_zero_positive_slack=bool(validation.get("require_zero_positive_slack", True)),
+        chance_claim_rule=str(validation.get("chance_claim_rule", "risk_certificate")),
         require_zero_fallback=bool(validation.get("require_zero_fallback", True)),
         require_zero_budget_failures=bool(validation.get("require_zero_budget_failures", True)),
         timing_percentile=float(validation.get("timing_percentile", 0.99)),
@@ -558,6 +565,9 @@ class NativeTrialResult:
     fallback_primary_invalid_count: int = 0
     primary_application_rate: float = 0.0
     fallback_application_rate: float = 0.0
+    risk_certificate_available_ticks: int = 0
+    risk_certificate_exceeded_ticks: int = 0
+    max_achieved_risk_total: float | None = None
     max_deadline_overrun_ms: float = 0.0
     collision_type: str = "none"
     first_collision_type: str = "none"
@@ -847,6 +857,14 @@ def summarize_native_trial(
         if config.chance_constraints.enabled
         else np.zeros_like(per_tick_slack, dtype=bool)
     )
+    certificate_status = np.asarray(result.get("risk_certificate_status", []), dtype=str)
+    achieved_total = np.asarray(result.get("achieved_risk_total", []), dtype=float)
+    certificate_available_ticks = int(
+        np.sum(np.isin(certificate_status, ("CERTIFIED", "EXCEEDED")))
+    )
+    certificate_exceeded_ticks = int(np.sum(certificate_status == "EXCEEDED"))
+    finite_achieved = achieved_total[np.isfinite(achieved_total)]
+    max_achieved_risk_total = float(np.max(finite_achieved)) if finite_achieved.size else None
 
     residuals = np.asarray(result.get("chance_residual_horizon", []), dtype=float)
     finite_residuals = residuals[np.isfinite(residuals)]
@@ -1110,6 +1128,9 @@ def summarize_native_trial(
         fallback_primary_invalid_count=fallback_primary_invalid_count,
         primary_application_rate=(primary_applied_total / total_ticks if total_ticks else 0.0),
         fallback_application_rate=(fallback_applied_total / total_ticks if total_ticks else 0.0),
+        risk_certificate_available_ticks=certificate_available_ticks,
+        risk_certificate_exceeded_ticks=certificate_exceeded_ticks,
+        max_achieved_risk_total=max_achieved_risk_total,
         max_deadline_overrun_ms=max_deadline_overrun_ms,
     )
 
@@ -1239,6 +1260,7 @@ def wilson_interval(
 
 
 COLLISION_BOUND_METHODS = frozenset({"clopper_pearson_one_sided", "wilson_two_sided"})
+CHANCE_CLAIM_RULES = frozenset({"risk_certificate", "zero_positive_slack"})
 
 
 def clopper_pearson_upper(
@@ -1438,8 +1460,20 @@ def _group_gates(
         claim_blockers.append("COLLISION_CONFIDENCE_BOUND")
     if mode != "deterministic" and protocol.require_zero_budget_failures and not budget_ok:
         claim_blockers.append("RISK_BUDGET_FAILURE")
-    if mode != "deterministic" and protocol.require_zero_positive_slack and positive_slack_episodes:
-        claim_blockers.append("POSITIVE_SLACK")
+    certificate_exceeded_episodes = sum(item.risk_certificate_exceeded_ticks > 0 for item in items)
+    certificate_missing_episodes = sum(
+        item.risk_certificate_available_ticks < item.completed_steps for item in items
+    )
+    if mode != "deterministic":
+        if protocol.chance_claim_rule == "risk_certificate":
+            # Joint claim: the post-solve Boole bound on the optimised horizon
+            # must stay within budget on every tick of every episode.
+            if certificate_missing_episodes:
+                claim_blockers.append("RISK_CERTIFICATE_UNAVAILABLE")
+            elif certificate_exceeded_episodes:
+                claim_blockers.append("RISK_CERTIFICATE_EXCEEDED")
+        elif protocol.require_zero_positive_slack and positive_slack_episodes:
+            claim_blockers.append("POSITIVE_SLACK")
     if mode != "deterministic" and protocol.require_zero_fallback and fallback_episodes:
         claim_blockers.append("FALLBACK")
 
@@ -1485,6 +1519,9 @@ def _group_gates(
             "confidence_level": protocol.confidence_level,
             "collision_rate_limit": protocol.empirical_collision_rate_limit,
             "positive_slack_episodes": positive_slack_episodes,
+            "chance_claim_rule": protocol.chance_claim_rule,
+            "risk_certificate_exceeded_episodes": certificate_exceeded_episodes,
+            "risk_certificate_missing_episodes": certificate_missing_episodes,
             "fallback_episodes": fallback_episodes,
             "timing_percentile": protocol.timing_percentile,
             "timing_statistic": f"max_over_trials({timing_field})",
@@ -1748,6 +1785,19 @@ def aggregate_native_trials(
                     items,
                     lambda item: item.positive_slack_ticks > 0,
                     protocol.confidence_level,
+                ),
+                "risk_certificate_exceeded_episode_rate": _rate_summary(
+                    items,
+                    lambda item: item.risk_certificate_exceeded_ticks > 0,
+                    protocol.confidence_level,
+                ),
+                "max_achieved_risk_total": max(
+                    (
+                        item.max_achieved_risk_total
+                        for item in items
+                        if item.max_achieved_risk_total is not None
+                    ),
+                    default=None,
                 ),
                 "fallback_episode_rate": _rate_summary(
                     items,
@@ -2462,9 +2512,12 @@ def _save_markdown_report(
             aggregate["overall"]["interpretation"],
             "",
             (
-                "Positive slack means the hard chance constraint was relaxed. Fallback means "
-                "the primary NMPC command was not applied. Either event blocks a probabilistic "
-                "safety claim under this protocol, even when no geometric collision was observed."
+                "Positive slack means a horizon cell exceeded its uniform risk share at the "
+                "optimised trajectory. Under the default `risk_certificate` rule the claim is "
+                "blocked only when the post-solve risk sum of a horizon exceeds the joint "
+                "budget (or the certificate is unavailable); fallback means the primary NMPC "
+                "command was not applied and also blocks the claim, even when no geometric "
+                "collision was observed."
             ),
             "",
             "## Reproduction",

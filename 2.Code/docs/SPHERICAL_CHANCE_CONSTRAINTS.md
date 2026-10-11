@@ -138,4 +138,31 @@ Fallback and emergency statuses are not implemented through Stage 5.
   \(1..N\) and obstacle (\(N\,n_{\mathrm{obs}}\) cells). The budget applies to one prediction horizon, not the
   complete receding-horizon episode.
 - Spherical obstacle geometry only.
-- Positive slack invalidates the chance guarantee and is never hidden.
+- Positive slack (a cell above its allocated share at the optimized
+  trajectory) is always reported and never hidden. For `joint` semantics the
+  horizon claim is decided by the post-solve risk certificate below; without a
+  certificate, positive slack blocks the claim.
+
+## Post-solve risk certificate
+
+After every chance solve the controller evaluates, on the optimized
+trajectory and the solution's collision normals,
+
+\[
+\hat\epsilon_{k,o}=1-\Phi\!\left(\frac{d_{k,o}-r_{\mathrm{base},o}}{\sigma_{k,o}}\right),
+\qquad k=1..N,
+\]
+
+the linearized Gaussian probability of crossing the *untightened* safety
+sphere. `joint`: `CERTIFIED` iff \(\sum_{k,o}\hat\epsilon_{k,o}\le\epsilon_{\mathrm{total}}\)
+(the Boole bound the joint claim relies on); `individual`: iff every
+\(\hat\epsilon_{k,o}\le\epsilon_{\mathrm{ind}}\). The result is exposed as
+`achieved_risk_total`, `achieved_risk_max` and `risk_certificate_status`.
+
+Diagnosis behind this rule (October 2026, joint, seeds 1000–1001): every
+remaining positive-slack cell was a re-projection shortfall (enforced radius
+met, solution-normal radius missed), 98% of them at the terminal node,
+median 0.1–0.4 mm, max ~11 mm; node 0 never carried slack. The horizon risk
+sum stayed far below the budget (median 0.002–0.004, max 0.05 vs 0.10).
+A direction-robust tightening (\(\sigma_{\max}\)) would remove these cells but
+adds up to 74 mm of radius (p95 14 mm), so the certificate was preferred.

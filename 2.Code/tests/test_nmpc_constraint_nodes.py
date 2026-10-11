@@ -237,3 +237,70 @@ class PostSolveReprojectionTests(unittest.TestCase):
         self.assertTrue(np.all(distance > enforced[1:]))
         self.assertGreater(float(np.max(solution.slacks)), 0.0)
         self.assertEqual(solution.solver_status, "SOLVED_WITH_SLACK")
+
+    def test_certificate_reports_achieved_risk_of_solution(self):
+        from scipy.stats import norm
+
+        solution = self._solve()
+        diagnostic = solution.post_solve_diagnostic_profile
+        base = solution.tightened_safety_radii[0, 0]
+        distance = np.sqrt(0.5**2 + 1e-6)
+        sigmas = diagnostic.projected_sigma[1:, 0]
+        expected = float(np.sum(norm.sf((distance - base) / sigmas)))
+        self.assertAlmostEqual(solution.achieved_risk_total, expected, places=9)
+        # Each cell exceeds its uniform share 0.05 (positive slack) but the
+        # horizon total is compared against the 0.1 joint budget.
+        self.assertEqual(
+            solution.risk_certificate_status, "CERTIFIED" if expected <= 0.1 else "EXCEEDED"
+        )
+
+
+class CertifyAchievedRiskTests(unittest.TestCase):
+    def _options(self, semantics="joint"):
+        from quadrotor_mpc.control.nmpc.chance_constraints import ChanceConstraintOptions
+        from quadrotor_mpc.control.nmpc.risk_budget import RiskBudgetOptions
+
+        return ChanceConstraintOptions(
+            enabled=True,
+            individual_epsilon=0.05,
+            risk_budget=RiskBudgetOptions(semantics=semantics, total_epsilon=0.1),
+        )
+
+    def _certify(self, distances, sigmas, semantics="joint", first=1):
+        from quadrotor_mpc.control.nmpc.chance_constraints import certify_achieved_risk
+
+        distances = np.asarray(distances, dtype=float)
+        steps = distances.shape[0]
+        vehicle = np.column_stack([distances, np.zeros(steps), np.zeros(steps)])
+        return certify_achieved_risk(
+            vehicle_positions=vehicle,
+            obstacle_positions=np.zeros((1, steps, 3)),
+            base_safety_radii_m=np.array([0.5]),
+            projected_sigmas_m=np.asarray(sigmas, dtype=float).reshape(steps, 1),
+            options=self._options(semantics),
+            first_constrained_step=first,
+            distance_smoothing_m2=0.0,
+        )
+
+    def test_joint_sum_against_budget(self):
+        from scipy.stats import norm
+
+        # beta*sigma clearance per cell: z = 2.0 -> 0.02275 each, 4 cells -> 0.091
+        result = self._certify([0.0, 0.7, 0.7, 0.7, 0.7], [0.1] * 5)
+        self.assertAlmostEqual(result.total, 4 * norm.sf(2.0), places=12)
+        self.assertEqual(result.status, "CERTIFIED")
+        self.assertEqual(float(result.achieved_risks[0, 0]), 0.0)  # node 0 excluded
+        tight = self._certify([0.0, 0.65, 0.65, 0.65, 0.65], [0.1] * 5)
+        self.assertEqual(tight.status, "EXCEEDED")
+
+    def test_individual_semantics_checks_every_cell(self):
+        result = self._certify([0.0, 0.8, 0.62], [0.1] * 3, semantics="individual")
+        self.assertGreater(result.maximum, 0.05)
+        self.assertEqual(result.status, "EXCEEDED")
+
+    def test_zero_sigma_is_geometric(self):
+        safe = self._certify([0.0, 0.6], [0.0, 0.0])
+        self.assertEqual(safe.total, 0.0)
+        inside = self._certify([0.0, 0.4], [0.0, 0.0])
+        self.assertEqual(inside.total, 1.0)
+        self.assertEqual(inside.status, "EXCEEDED")

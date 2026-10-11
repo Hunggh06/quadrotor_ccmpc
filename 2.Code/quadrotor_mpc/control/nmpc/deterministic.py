@@ -10,6 +10,7 @@ import numpy as np
 from quadrotor_mpc.control.nmpc.chance_constraints import (
     ChanceConstraintOptions,
     build_spherical_chance_profile,
+    certify_achieved_risk,
     evaluate_spherical_constraints,
 )
 from quadrotor_mpc.control.nmpc.core import (
@@ -545,6 +546,22 @@ class DeterministicNMPCController:
                 safety_radii_m=evaluation_radii,
                 distance_smoothing_m2=self._chance_options.distance_smoothing_m2,
             )
+            certificate = None
+            if self._chance_options.enabled:
+                certificate = certify_achieved_risk(
+                    vehicle_positions=nominal_states[:, :3],
+                    obstacle_positions=used_obstacle_predictions,
+                    base_safety_radii_m=base_safety_radii,
+                    projected_sigmas_m=(
+                        diagnostic_metadata.projected_sigmas_m
+                        if post_solve_diagnostic_profile is not None
+                        else np.zeros((horizon_length, len(obstacles)))
+                    ),
+                    options=self._chance_options,
+                    first_constrained_step=min(FIRST_CONSTRAINED_NODE, horizon_length - 1),
+                    distance_smoothing_m2=self._chance_options.distance_smoothing_m2,
+                    tolerance=self._chance_options.risk_budget.tolerance,
+                )
         if self._chance_options.enabled:
             solver_status = (
                 "SOLVED_SAFE"
@@ -594,4 +611,9 @@ class DeterministicNMPCController:
             ),
             chance_profile_solve_attempt_id=solve_attempt_id,
             controller_timing=timing_recorder.snapshot(),
+            achieved_risk_total=None if certificate is None else certificate.total,
+            achieved_risk_max=None if certificate is None else certificate.maximum,
+            risk_certificate_status=(
+                "NOT_APPLICABLE" if certificate is None else certificate.status
+            ),
         )

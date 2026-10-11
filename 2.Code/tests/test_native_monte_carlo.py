@@ -56,6 +56,7 @@ def trial(
     slack: bool = False,
     fallback: bool = False,
     p99: float = 40.0,
+    certificate_exceeded: bool = False,
 ) -> NativeTrialResult:
     risk_semantics = (
         "disabled"
@@ -128,6 +129,9 @@ def trial(
         risk_allocation_method=risk_allocation_method,
         allocator_config_hash=None if mode == "deterministic" else "a" * 64,
         risk_provenance_status="AVAILABLE",
+        risk_certificate_available_ticks=0 if mode == "deterministic" else 10,
+        risk_certificate_exceeded_ticks=1 if certificate_exceeded else 0,
+        max_achieved_risk_total=None if mode == "deterministic" else 0.02,
     )
 
 
@@ -243,7 +247,7 @@ class NativeMonteCarloMetricTests(unittest.TestCase):
         ]
         aggregate = aggregate_native_trials(
             items,
-            protocol(trials=50),
+            replace(protocol(trials=50), chance_claim_rule="zero_positive_slack"),
             controller_period_ms=50.0,
         )
         joint = aggregate["noise_levels"]["nominal"]["controllers"]["joint_uniform"]
@@ -519,6 +523,43 @@ class StatisticsProtocolTests(unittest.TestCase):
         self.assertAlmostEqual(tests["collision"]["p_value_exact_two_sided"], 2 * 0.5**6)
         self.assertEqual(tests["collision"]["holm_family_size"], 1)
         json.dumps(aggregate, allow_nan=False)
+
+
+class RiskCertificateClaimTests(unittest.TestCase):
+    """Default claim rule: post-solve horizon risk sum within the joint budget."""
+
+    def _joint_gates(self, items):
+        aggregate = aggregate_native_trials(items, protocol(trials=50), controller_period_ms=50.0)
+        return aggregate["noise_levels"]["nominal"]["controllers"]["joint_uniform"]["gates"]
+
+    def test_certified_positive_slack_does_not_block_claim(self):
+        items = [trial("deterministic", seed) for seed in range(10, 60)] + [
+            trial("joint_uniform", seed, slack=True) for seed in range(10, 60)
+        ]
+        gates = self._joint_gates(items)
+        self.assertNotIn("POSITIVE_SLACK", gates["claim_blockers"])
+        self.assertNotIn("RISK_CERTIFICATE_EXCEEDED", gates["claim_blockers"])
+        self.assertEqual(gates["details"]["positive_slack_episodes"], 50)
+
+    def test_exceeded_certificate_blocks_claim(self):
+        items = [trial("deterministic", seed) for seed in range(10, 60)] + [
+            trial("joint_uniform", seed, certificate_exceeded=seed == 20) for seed in range(10, 60)
+        ]
+        gates = self._joint_gates(items)
+        self.assertIn("RISK_CERTIFICATE_EXCEEDED", gates["claim_blockers"])
+        self.assertEqual(gates["details"]["risk_certificate_exceeded_episodes"], 1)
+
+    def test_missing_certificate_blocks_claim(self):
+        items = [trial("deterministic", seed) for seed in range(10, 60)] + [
+            replace(trial("joint_uniform", seed), risk_certificate_available_ticks=9)
+            for seed in range(10, 60)
+        ]
+        gates = self._joint_gates(items)
+        self.assertEqual(gates["claim_status"], "BLOCKED_RISK_CERTIFICATE_UNAVAILABLE")
+
+    def test_unknown_claim_rule_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "chance_claim_rule"):
+            replace(protocol(), chance_claim_rule="anything")
 
 
 if __name__ == "__main__":

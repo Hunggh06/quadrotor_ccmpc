@@ -228,6 +228,17 @@ def _assurance_card(sample: Mapping[str, Any], context: PanelRuntimeContext) -> 
             "Joint chance constraints satisfied on the current prediction horizon",
             OK,
         )
+    if (
+        status == "NOT_GUARANTEED_RISK_CERTIFICATE_EXCEEDED"
+        or reason == "risk_certificate_exceeded"
+    ):
+        return StatusCard(
+            "assurance",
+            "Safety assurance",
+            "NOT GUARANTEED",
+            "Post-solve horizon risk exceeds the joint budget",
+            WARNING,
+        )
     if status == "NOT_GUARANTEED_POSITIVE_SLACK" or reason == "positive_slack":
         return StatusCard(
             "assurance",
@@ -296,10 +307,13 @@ def _slack_card(sample: Mapping[str, Any], context: PanelRuntimeContext) -> Stat
     residual = _optional_float(sample, "minimum_chance_residual_m")
     if not context.chance_constraints_enabled or slack is None:
         return StatusCard("slack", "Chance constraint", "DISABLED", "No slack", MUTED)
+    certified = str(sample.get("risk_certificate_status", "")) == "CERTIFIED"
     if slack <= context.guarantee_slack_tolerance_m:
         value, tone = "HARD-SAFE", OK
     elif slack <= context.maximum_acceptable_slack_m:
         value, tone = "DEGRADED", WARNING
+    elif certified:
+        value, tone = "RISK CERTIFIED", WARNING
     else:
         value, tone = "REJECT LIMIT", DANGER
     residual_text = "—" if residual is None else f"{residual:.4f}m"

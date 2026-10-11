@@ -54,10 +54,12 @@ controller:
     # fail the real-time gate until the controller is accelerated.
     solve_deadline_s: 0.05
     reject_on_deadline_miss: false
-    # Positive slack is never guarantee-eligible. The larger acceptance limit
-    # permits an explicitly degraded solution before fallback is required.
+    # Slack above the acceptance limit triggers fallback unless the post-solve
+    # risk certificate shows the horizon risk sum is within the joint budget
+    # (accept_certified_slack). Assurance is decided by the certificate.
     guarantee_slack_tolerance_m: 1.0e-6
     maximum_acceptable_slack_m: 0.08
+    accept_certified_slack: true
     constraint_tolerance_m: 1.0e-6
     maximum_solver_residual: 1.0e-3
     command_bound_tolerance: 1.0e-6

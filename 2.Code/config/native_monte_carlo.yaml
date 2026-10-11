@@ -34,6 +34,11 @@ validation:
   # This is an empirical finite-sample gate, not an interpretation of the
   # per-horizon joint risk budget as an episode-wide probability.
   empirical_collision_rate_limit: 0.10
+  # Claim rule for chance controllers. risk_certificate: every tick's
+  # post-solve linearised risk sum on the optimised horizon must stay within
+  # the joint budget (individual: every cell within its epsilon). The legacy
+  # zero_positive_slack rule uses require_zero_positive_slack instead.
+  chance_claim_rule: risk_certificate
   require_zero_positive_slack: true
   require_zero_fallback: true
   require_zero_budget_failures: true

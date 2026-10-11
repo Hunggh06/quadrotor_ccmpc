@@ -50,6 +50,10 @@ inputs are normalized at construction.
 | `risk_allocations` | allocated risk per horizon constraint (row 0 = 0) | `(N+1, n_obs)` |
 | `slacks` | nonnegative constraint relaxation | `(N+1, n_obs)` |
 
+Scalar post-solve fields: `achieved_risk_total`, `achieved_risk_max` and
+`risk_certificate_status` (`CERTIFIED`, `EXCEEDED`, `NOT_APPLICABLE`,
+`NOT_AVAILABLE`).
+
 Row 0 of the horizon arrays is the measured current state. The NLP constrains
 nodes `1..N` only; row 0 carries zero risk and the untightened base radius.
 | `solver_status` | backend-independent status label | string |

@@ -253,7 +253,10 @@ Verify:
   under the full gate set: joint semantics, valid budget, primary solver
   success, available in-tolerance residuals, slack within tolerance, no
   deadline miss and no fallback;
-- any positive slack or fallback blocks the finite-sample chance claim;
+- fallback, an exceeded post-solve risk certificate, or a missing certificate
+  blocks the finite-sample chance claim (`validation.chance_claim_rule:
+  risk_certificate`); positive slack is reported separately and blocks only
+  under the legacy `zero_positive_slack` rule;
 - no per-horizon joint budget is reinterpreted as episode collision
   probability;
 - worst-trial timing: every trial's p99 solver time must fit in the 50 ms

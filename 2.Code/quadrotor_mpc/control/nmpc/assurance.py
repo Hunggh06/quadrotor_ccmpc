@@ -52,7 +52,7 @@ LEGACY_STATUS_MAP: dict[str, str] = {
     "GUARANTEE_ELIGIBLE": "LEGACY_GUARANTEE_ELIGIBLE_UNVERIFIED",
 }
 
-ASSURANCE_SCHEMA_VERSION = 3
+ASSURANCE_SCHEMA_VERSION = 4
 
 
 class HorizonAssuranceStatus(str, Enum):
@@ -67,6 +67,7 @@ class HorizonAssuranceStatus(str, Enum):
     NOT_GUARANTEED_RESIDUAL_UNAVAILABLE = "NOT_GUARANTEED_RESIDUAL_UNAVAILABLE"
     NOT_GUARANTEED_RESIDUAL_INVALID = "NOT_GUARANTEED_RESIDUAL_INVALID"
     NOT_GUARANTEED_RESIDUAL_THRESHOLD_EXCEEDED = "NOT_GUARANTEED_RESIDUAL_THRESHOLD_EXCEEDED"
+    NOT_GUARANTEED_RISK_CERTIFICATE_EXCEEDED = "NOT_GUARANTEED_RISK_CERTIFICATE_EXCEEDED"
     NOT_GUARANTEED_POSITIVE_SLACK = "NOT_GUARANTEED_POSITIVE_SLACK"
     NOT_GUARANTEED_DEADLINE_MISS = "NOT_GUARANTEED_DEADLINE_MISS"
     NOT_GUARANTEED_FALLBACK_ACTIVE = "NOT_GUARANTEED_FALLBACK_ACTIVE"
@@ -90,6 +91,10 @@ _PRECEDENCE: tuple[tuple[HorizonAssuranceStatus, str], ...] = (
         HorizonAssuranceStatus.NOT_GUARANTEED_RESIDUAL_THRESHOLD_EXCEEDED,
         "residual_threshold_exceeded",
     ),
+    (
+        HorizonAssuranceStatus.NOT_GUARANTEED_RISK_CERTIFICATE_EXCEEDED,
+        "risk_certificate_exceeded",
+    ),
     (HorizonAssuranceStatus.NOT_GUARANTEED_POSITIVE_SLACK, "positive_slack"),
     (HorizonAssuranceStatus.NOT_GUARANTEED_DEADLINE_MISS, "deadline_miss"),
     (HorizonAssuranceStatus.NOT_GUARANTEED_FALLBACK_ACTIVE, "fallback_active"),
@@ -111,6 +116,9 @@ class HorizonAssuranceInput:
     slack_tolerance: float
     deadline_missed: bool
     fallback_active: bool
+    # "CERTIFIED"/"EXCEEDED" when the backend evaluated the post-solve risk
+    # certificate; otherwise the strict zero-slack rule is applied.
+    risk_certificate_status: str = "NOT_AVAILABLE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,7 +243,16 @@ def classify_horizon_assurance(
     elif data.residual_gate_status != _GATE_PASS:
         failed.append("residual_invalid")
 
-    if data.maximum_slack > data.slack_tolerance:
+    # The joint claim is P(any violation on the horizon) <= total epsilon.  When
+    # the post-solve certificate is available it evaluates exactly that Boole
+    # bound on the optimised horizon, so it decides eligibility; positive slack
+    # (a cell above its uniform share) is still reported but no longer blocks
+    # when the horizon total is within budget.  Without a certificate the
+    # stricter zero-slack rule is kept.
+    certificate = str(data.risk_certificate_status)
+    if certificate == "EXCEEDED":
+        failed.append("risk_certificate_exceeded")
+    elif certificate != "CERTIFIED" and data.maximum_slack > data.slack_tolerance:
         failed.append("positive_slack")
 
     if data.deadline_missed:

@@ -275,6 +275,28 @@ class SafetySupervisorTests(unittest.TestCase):
         self.assertEqual(result.fallback_reason, "COMMAND_OUT_OF_BOUNDS")
         self.assertTrue(np.all(result.command <= controller._limits_upper))
 
+    def test_certified_large_slack_is_accepted(self):
+        certified = replace(solution(slack=0.15), risk_certificate_status="CERTIFIED")
+        controller = supervisor(ScriptedController([certified]))
+        result = controller.solve(vehicle_belief(), OBSTACLES, GOAL, 0.0)
+        self.assertFalse(result.fallback_active)
+        self.assertTrue(result.solution_accepted)
+        self.assertEqual(result.command_source, "PRIMARY_NMPC")
+
+    def test_uncertified_large_slack_still_rejected(self):
+        for status in ("EXCEEDED", "NOT_AVAILABLE"):
+            candidate = replace(solution(slack=0.15), risk_certificate_status=status)
+            controller = supervisor(ScriptedController([candidate]))
+            result = controller.solve(vehicle_belief(), OBSTACLES, GOAL, 0.0)
+            self.assertTrue(result.fallback_active, status)
+            self.assertEqual(result.fallback_reason, "SLACK_LIMIT_EXCEEDED")
+
+    def test_certified_slack_acceptance_can_be_disabled(self):
+        certified = replace(solution(slack=0.15), risk_certificate_status="CERTIFIED")
+        controller = supervisor(ScriptedController([certified]), accept_certified_slack=False)
+        result = controller.solve(vehicle_belief(), OBSTACLES, GOAL, 0.0)
+        self.assertEqual(result.fallback_reason, "SLACK_LIMIT_EXCEEDED")
+
     def test_backend_under_reporting_slack_is_rejected(self):
         # Margin shows a 0.1 m violation but the backend reports zero slack.
         dishonest = replace(solution(), chance_margins=np.full((3, 1), -0.1))

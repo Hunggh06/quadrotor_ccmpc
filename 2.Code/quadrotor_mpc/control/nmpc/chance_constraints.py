@@ -341,3 +341,73 @@ def evaluate_spherical_constraints(
     distance = np.sqrt(np.sum(relative * relative, axis=2) + float(distance_smoothing_m2))
     residual = distance - safe
     return residual, np.maximum(0.0, -residual)
+
+
+@dataclass(frozen=True, slots=True)
+class RiskCertificate:
+    """Linearised collision risk of an optimised horizon versus its budget.
+
+    ``achieved_risks[k, o] = P(n^T e > d_{k,o} - r_base,o)`` with
+    ``e ~ N(0, sigma_{k,o}^2)``: the probability, under the same Gaussian and
+    linearisation assumptions used for tightening, that the realised position
+    crosses the *untightened* safety sphere along the solution's normal.
+
+    * ``joint`` semantics certifies ``sum(achieved_risks) <= total_epsilon``.
+      This is exactly the Boole bound the joint claim relies on; the uniform
+      per-cell split is only a design device, so a cell slightly above its
+      share (reported as positive slack) is acceptable when the horizon total
+      stays within budget.
+    * ``individual`` semantics certifies every cell ``<= individual_epsilon``.
+
+    Rows before ``first_constrained_step`` (the measured state) carry zero risk.
+    """
+
+    achieved_risks: np.ndarray
+    total: float
+    maximum: float
+    status: str
+
+
+def certify_achieved_risk(
+    *,
+    vehicle_positions: np.ndarray,
+    obstacle_positions: np.ndarray,
+    base_safety_radii_m: np.ndarray,
+    projected_sigmas_m: np.ndarray,
+    options: ChanceConstraintOptions,
+    first_constrained_step: int = 0,
+    distance_smoothing_m2: float = 1e-6,
+    tolerance: float = 1e-12,
+) -> RiskCertificate:
+    """Evaluate the post-solve risk certificate for one horizon."""
+
+    from scipy.stats import norm
+
+    vehicle = np.asarray(vehicle_positions, dtype=float)
+    obstacles = np.asarray(obstacle_positions, dtype=float)
+    base = np.asarray(base_safety_radii_m, dtype=float).reshape(-1)
+    sigmas = np.asarray(projected_sigmas_m, dtype=float)
+    steps = vehicle.shape[0]
+    shape = (steps, base.shape[0])
+    if obstacles.shape != (base.shape[0], steps, 3) or sigmas.shape != shape:
+        raise ValueError("certificate inputs have inconsistent shapes")
+    relative = vehicle[:, None, :] - np.swapaxes(obstacles, 0, 1)
+    distance = np.sqrt(np.sum(relative * relative, axis=2) + float(distance_smoothing_m2))
+    clearance = distance - base[None, :]
+    risks = np.zeros(shape, dtype=float)
+    positive = sigmas > 1e-12
+    risks[positive] = norm.sf(clearance[positive] / sigmas[positive])
+    risks[~positive] = (clearance[~positive] < 0.0).astype(float)
+    risks[: max(0, min(int(first_constrained_step), steps)), :] = 0.0
+    total = float(np.sum(risks))
+    maximum = float(np.max(risks)) if risks.size else 0.0
+    if not options.enabled:
+        status = "NOT_APPLICABLE"
+    elif options.risk_budget.semantics == "joint":
+        status = (
+            "CERTIFIED" if total <= options.risk_budget.total_epsilon + tolerance else "EXCEEDED"
+        )
+    else:
+        status = "CERTIFIED" if maximum <= options.individual_epsilon + tolerance else "EXCEEDED"
+    risks.setflags(write=False)
+    return RiskCertificate(achieved_risks=risks, total=total, maximum=maximum, status=status)

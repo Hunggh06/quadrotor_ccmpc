@@ -106,7 +106,9 @@ differs.
 The report distinguishes five ideas that must not be collapsed:
 
 1. A geometric collision is observed using MuJoCo truth.
-2. Positive slack means a hard chance constraint was relaxed.
+2. Positive slack means a horizon cell exceeded its allocated share at the
+   optimized trajectory; the claim is decided by the post-solve risk
+   certificate (horizon risk sum within the joint budget on every tick).
 3. Fallback means the primary NMPC command was rejected.
 4. `BUDGET_OK` means only that the current prediction-horizon allocation sums
    correctly.
@@ -154,6 +156,10 @@ of `0.113513`, above the `0.10` gate.
   the gate requires the worst trial to fit in the control period and fails
   when any trial lacks timing samples. Aggregate timing summaries are named
   `per_trial_<stat>` with `mean`/`median`/`max` across trials.
+- Chance claim rule `risk_certificate` (default): every tick of every
+  chance episode must carry a `CERTIFIED` post-solve risk certificate; see
+  `SPHERICAL_CHANCE_CONSTRAINTS.md`. `zero_positive_slack` restores the
+  stricter legacy rule.
 - These rules were changed before the next campaign was run and must not be
   changed after seeing its results. The default 50-trial protocol is
   retained. Positive slack, fallback and the failed

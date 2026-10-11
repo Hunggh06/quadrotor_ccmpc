@@ -70,6 +70,7 @@ def valid_joint_input(**overrides: Any) -> HorizonAssuranceInput:
         slack_tolerance=float(overrides.get("slack_tolerance", 1e-6)),
         deadline_missed=bool(overrides.get("deadline_missed", False)),
         fallback_active=bool(overrides.get("fallback_active", False)),
+        risk_certificate_status=str(overrides.get("risk_certificate_status", "NOT_AVAILABLE")),
     )
 
 
@@ -318,8 +319,9 @@ class HorizonAssuranceContractTests(unittest.TestCase):
         for mapped in LEGACY_STATUS_MAP.values():
             self.assertNotEqual(mapped, "HORIZON_GUARANTEE_ELIGIBLE")
 
-    def test_schema_version_is_three(self):
-        self.assertEqual(ASSURANCE_SCHEMA_VERSION, 3)
+    def test_schema_version_is_four(self):
+        # v4 adds the post-solve risk certificate gate.
+        self.assertEqual(ASSURANCE_SCHEMA_VERSION, 4)
 
 
 class RiskSemanticsNormalizationTests(unittest.TestCase):
@@ -418,6 +420,24 @@ class SupervisorAssuranceIntegrationTests(unittest.TestCase):
             "HORIZON_GUARANTEE_ELIGIBLE",
         )
         self.assertTrue(solution.horizon_assurance_eligible)
+
+
+class RiskCertificateAssuranceTests(unittest.TestCase):
+    def test_certified_horizon_with_positive_slack_is_eligible(self):
+        result = decision(
+            valid_joint_input(maximum_slack=0.003, risk_certificate_status="CERTIFIED")
+        )
+        self.assertTrue(result.eligible)
+
+    def test_exceeded_certificate_blocks(self):
+        result = decision(valid_joint_input(risk_certificate_status="EXCEEDED"))
+        self.assertEqual(
+            result.status, HorizonAssuranceStatus.NOT_GUARANTEED_RISK_CERTIFICATE_EXCEEDED
+        )
+
+    def test_without_certificate_strict_slack_rule_applies(self):
+        result = decision(valid_joint_input(maximum_slack=0.003))
+        self.assertEqual(result.status, HorizonAssuranceStatus.NOT_GUARANTEED_POSITIVE_SLACK)
 
 
 if __name__ == "__main__":

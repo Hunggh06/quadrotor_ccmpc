@@ -39,7 +39,10 @@ The primary command is accepted only when all enabled checks pass:
 4. Slack is nonnegative and `chance_residual + slack` satisfies the nonlinear
    residual tolerance.
 5. Maximum safety slack does not exceed
-   `maximum_acceptable_slack_m`.
+   `maximum_acceptable_slack_m`, unless `accept_certified_slack` is enabled
+   (default) and the backend's post-solve risk certificate is `CERTIFIED`
+   (horizon risk sum within the joint budget at the optimized trajectory).
+   An `EXCEEDED` or missing certificate keeps the slack limit.
 6. The end-to-end call returns before `solve_deadline_s` when
    `reject_on_deadline_miss` is enabled.
 
@@ -53,8 +56,10 @@ Two thresholds have deliberately different meanings:
 - `guarantee_slack_tolerance_m`: a numerical zero used only to decide whether a
   solved step is *eligible* for a chance-constraint guarantee.
 - `maximum_acceptable_slack_m`: an operational degraded-mode limit. A primary
-  solution below this limit may be applied, but any positive slack remains
-  `NOT_GUARANTEED_POSITIVE_SLACK`.
+  solution below this limit may be applied. Its assurance is then decided by
+  the post-solve risk certificate (`NOT_GUARANTEED_RISK_CERTIFICATE_EXCEEDED`
+  when the horizon risk sum exceeds the budget); backends without a
+  certificate keep the strict `NOT_GUARANTEED_POSITIVE_SLACK` rule.
 
 Therefore:
 
@@ -131,6 +136,7 @@ controller:
     reject_on_deadline_miss: true
     guarantee_slack_tolerance_m: 1.0e-6
     maximum_acceptable_slack_m: 0.08
+    accept_certified_slack: true
     constraint_tolerance_m: 1.0e-6
     maximum_solver_residual: 1.0e-3
     command_bound_tolerance: 1.0e-6

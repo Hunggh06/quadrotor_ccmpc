@@ -41,6 +41,9 @@ def _covariance(value, size: int, label: str) -> np.ndarray:
     return covariance
 
 
+RISK_CERTIFICATE_STATUSES = frozenset({"CERTIFIED", "EXCEEDED", "NOT_APPLICABLE", "NOT_AVAILABLE"})
+
+
 @dataclass(frozen=True, slots=True)
 class VehicleBelief:
     """Nominal quaternion state and 12D local error-state covariance."""
@@ -236,7 +239,7 @@ class ControlSolution:
     horizon_assurance_eligible: bool = False
     horizon_assurance_reason: str = ""
     horizon_assurance_failed_checks: tuple[str, ...] = ()
-    assurance_schema_version: int = 3
+    assurance_schema_version: int = 4
     chance_profile_schema_version: int = 1
     enforced_chance_profile: Any | None = None
     post_solve_diagnostic_profile: Any | None = None
@@ -244,6 +247,12 @@ class ControlSolution:
     chance_profile_enforced_profile_id: str = ""
     chance_profile_solve_attempt_id: str = ""
     controller_timing: ControllerTiming | None = None
+    # Post-solve risk certificate (see control/nmpc/chance_constraints.py):
+    # linearised collision risk of the OPTIMISED horizon versus the configured
+    # budget.  NOT_AVAILABLE for backends that do not compute it.
+    achieved_risk_total: float | None = None
+    achieved_risk_max: float | None = None
+    risk_certificate_status: str = "NOT_AVAILABLE"
 
     def __post_init__(self) -> None:
         command = _readonly_array(self.command, (CONTROL_SIZE,), "ControlSolution.command")
@@ -427,6 +436,21 @@ class ControlSolution:
             "consecutive_rejections",
             consecutive_rejections,
         )
+        for label in ("achieved_risk_total", "achieved_risk_max"):
+            raw = getattr(self, label)
+            if raw is None:
+                continue
+            number = float(raw)
+            if not np.isfinite(number) or number < 0.0:
+                raise ValueError(f"ControlSolution.{label} must be finite and >= 0")
+            object.__setattr__(self, label, number)
+        certificate = str(self.risk_certificate_status)
+        if certificate not in RISK_CERTIFICATE_STATUSES:
+            raise ValueError(
+                "ControlSolution.risk_certificate_status must be one of "
+                f"{sorted(RISK_CERTIFICATE_STATUSES)}"
+            )
+        object.__setattr__(self, "risk_certificate_status", certificate)
         solve_time_ms = float(self.solve_time_ms)
         if not np.isfinite(solve_time_ms) or solve_time_ms < 0.0:
             raise ValueError("ControlSolution.solve_time_ms must be finite and >= 0")

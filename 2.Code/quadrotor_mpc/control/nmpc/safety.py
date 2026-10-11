@@ -53,6 +53,11 @@ class SafetyFallbackOptions:
     reject_on_deadline_miss: bool = True
     guarantee_slack_tolerance_m: float = 1e-6
     maximum_acceptable_slack_m: float = 0.08
+    # When the backend's post-solve risk certificate is CERTIFIED, the horizon
+    # meets its risk budget at the solution even if a cell needs more than
+    # maximum_acceptable_slack_m of slack; the solution is then accepted.
+    # Without a certificate (or when it is EXCEEDED) the slack limit applies.
+    accept_certified_slack: bool = True
     constraint_tolerance_m: float = 1e-6
     maximum_solver_residual: float = 1e-3
     command_bound_tolerance: float = 1e-6
@@ -141,6 +146,7 @@ class SafetyFallbackOptions:
                 "maximum_acceptable_slack_m",
                 0.08,
             ),
+            accept_certified_slack=bool(raw.get("accept_certified_slack", True)),
             constraint_tolerance_m=raw.get("constraint_tolerance_m", 1e-6),
             maximum_solver_residual=raw.get(
                 "maximum_solver_residual",
@@ -311,7 +317,10 @@ class SafeFallbackController:
             if float(np.min(compensated)) < -self.options.constraint_tolerance_m:
                 return "NONLINEAR_RESIDUAL_INVALID"
         maximum_slack = 0.0 if not solution.slacks.size else float(np.max(solution.slacks))
-        if maximum_slack > self.options.maximum_acceptable_slack_m:
+        certified = (
+            self.options.accept_certified_slack and solution.risk_certificate_status == "CERTIFIED"
+        )
+        if maximum_slack > self.options.maximum_acceptable_slack_m and not certified:
             return "SLACK_LIMIT_EXCEEDED"
         if (
             self.options.reject_on_deadline_miss
@@ -628,6 +637,7 @@ class SafeFallbackController:
                 slack_tolerance=self.options.guarantee_slack_tolerance_m,
                 deadline_missed=deadline_missed,
                 fallback_active=fallback_active,
+                risk_certificate_status=primary_solution.risk_certificate_status,
             )
         )
         return replace(

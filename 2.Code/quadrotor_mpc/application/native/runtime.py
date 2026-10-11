@@ -116,7 +116,7 @@ class CoupledStep:
     horizon_assurance_eligible: bool = False
     horizon_assurance_reason: str = ""
     horizon_assurance_failed_checks: tuple[str, ...] = ()
-    assurance_schema_version: int = 3
+    assurance_schema_version: int = 4
     chance_profile_schema_version: int = 1
     enforced_chance_profile: Any | None = None
     post_solve_diagnostic_profile: Any | None = None
@@ -129,6 +129,8 @@ class CoupledStep:
     deadline_overrun_ms: float = 0.0
     total_controller_time_ms: float = 0.0
     controller_timing: ControllerTiming | None = None
+    achieved_risk_total: float | None = None
+    risk_certificate_status: str = "NOT_AVAILABLE"
 
 
 class CoupledRuntime(Protocol):
@@ -308,6 +310,8 @@ def run_coupled_simulation(
     risk_budget_remaining_history: list[float] = []
     risk_constraint_count_history: list[int] = []
     risk_budget_status_history: list[str] = []
+    achieved_risk_total_history: list[float] = []
+    risk_certificate_status_history: list[str] = []
     primary_solver_status_history: list[str] = []
     primary_solver_success_history: list[bool] = []
     primary_solver_iteration_history: list[int] = []
@@ -445,6 +449,8 @@ def run_coupled_simulation(
                 risk_budget_remaining_history.clear()
                 risk_constraint_count_history.clear()
                 risk_budget_status_history.clear()
+                achieved_risk_total_history.clear()
+                risk_certificate_status_history.clear()
                 primary_solver_status_history.clear()
                 primary_solver_success_history.clear()
                 primary_solver_iteration_history.clear()
@@ -591,6 +597,10 @@ def run_coupled_simulation(
             )
             risk_constraint_count_history.append(solution.risk_constraint_count)
             risk_budget_status_history.append(solution.risk_budget_status)
+            achieved_risk_total_history.append(
+                np.nan if solution.achieved_risk_total is None else solution.achieved_risk_total
+            )
+            risk_certificate_status_history.append(solution.risk_certificate_status)
             primary_solver_status_history.append(solution.primary_solver_status)
             primary_solver_success_history.append(solution.primary_solver_success)
             primary_solver_iteration_history.append(solution.primary_solver_iterations)
@@ -781,6 +791,8 @@ def run_coupled_simulation(
                         risk_budget_remaining=solution.risk_budget_remaining,
                         risk_constraint_count=solution.risk_constraint_count,
                         risk_budget_status=solution.risk_budget_status,
+                        achieved_risk_total=solution.achieved_risk_total,
+                        risk_certificate_status=solution.risk_certificate_status,
                         primary_solver_status=solution.primary_solver_status,
                         primary_solver_success=solution.primary_solver_success,
                         primary_solver_iterations=(solution.primary_solver_iterations),
@@ -933,6 +945,8 @@ def run_coupled_simulation(
             dtype=int,
         ),
         "risk_budget_status": np.asarray(risk_budget_status_history, dtype=str),
+        "achieved_risk_total": np.asarray(achieved_risk_total_history, dtype=float),
+        "risk_certificate_status": np.asarray(risk_certificate_status_history, dtype=str),
         "primary_solver_status": np.asarray(
             primary_solver_status_history,
             dtype=str,
