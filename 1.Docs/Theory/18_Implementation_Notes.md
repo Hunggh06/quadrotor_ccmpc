@@ -25,8 +25,7 @@ This chapter bridges theory and code, documenting the `quadrotor_ccmpc` Python i
 quadrotor_ccmpc/
 ├── ccmpc/
 │ ├── __init__.py
-│ ├── ccmpc.py # Main CC-MPC controller
-│ ├── _problem.py # CVXPY QP construction
+│ ├── ccmpc.py # Main CC-MPC controller + CVXPY QP construction
 │ ├── dynamics.py # Quadrotor dynamics (RK4, Jacobians)
 │ ├── uncertainty.py # Covariance propagation (Eq 19)
 │ ├── obstacle.py # EllipsoidalObstacle, ObstacleManager
@@ -216,9 +215,9 @@ def chance_constraint_parameters(U, p_mav_guess, p_obs,
 
 **Cholesky convention**: For lower `L` with `L @ L.T = Omega`, the unit-sphere transform is `U = L.T`, so the transformed covariance is `U @ Sigma @ U.T = L.T @ Sigma @ L`. Using `L @ Sigma @ L.T` with the lower factor does not preserve $d^T\Omega d$ for a rotated obstacle.
 
-## 18.8 CVXPY Problem Construction (`_problem.py`)
+## 18.8 CVXPY Problem Construction (`CCMPC._build_problem` in `ccmpc.py`)
 
-The QP is built once with DPP-compliant structure:
+The QP is built once with DPP-compliant structure (schematic):
 
 ```python
 def build_qp_problem(mpc):

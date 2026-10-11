@@ -275,6 +275,14 @@ class SafetySupervisorTests(unittest.TestCase):
         self.assertEqual(result.fallback_reason, "COMMAND_OUT_OF_BOUNDS")
         self.assertTrue(np.all(result.command <= controller._limits_upper))
 
+    def test_backend_under_reporting_slack_is_rejected(self):
+        # Margin shows a 0.1 m violation but the backend reports zero slack.
+        dishonest = replace(solution(), chance_margins=np.full((3, 1), -0.1))
+        controller = supervisor(ScriptedController([dishonest]))
+        result = controller.solve(vehicle_belief(), OBSTACLES, GOAL, 0.0)
+        self.assertTrue(result.fallback_active)
+        self.assertEqual(result.fallback_reason, "NONLINEAR_RESIDUAL_INVALID")
+
     def test_deadline_miss_rejects_stale_command(self):
         controller = supervisor(
             ScriptedController([solution()], delay_s=0.01),

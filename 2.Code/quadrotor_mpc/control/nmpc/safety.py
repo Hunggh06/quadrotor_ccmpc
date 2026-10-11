@@ -204,6 +204,10 @@ class SafeFallbackController:
         self._fallback_position: np.ndarray | None = None
         self._fallback_yaw: float | None = None
         self._consecutive_rejections = 0
+        # Supervisor state captured just before the most recent acceptance so a
+        # later outer-loop deadline rejection can undo that acceptance.
+        self._pre_accept_last_command: np.ndarray | None = None
+        self._pre_accept_consecutive_rejections = 0
 
     @staticmethod
     def _control_limits(
@@ -283,9 +287,10 @@ class SafeFallbackController:
     ) -> str | None:
         if not solution.primary_solver_success:
             return "PRIMARY_SOLVER_FAILED"
-        if self._residual_gate(solution).value == "FAIL_THRESHOLD":
+        residual_gate = self._residual_gate(solution).value
+        if residual_gate == "FAIL_THRESHOLD":
             return "SOLVER_RESIDUAL_EXCEEDED"
-        if self._residual_gate(solution).value == "FAIL_INVALID":
+        if residual_gate == "FAIL_INVALID":
             return "SOLVER_RESIDUAL_INVALID"
         if solution.risk_semantics == "joint" and solution.risk_budget_status != "BUDGET_OK":
             return "RISK_BUDGET_INVALID"
@@ -296,6 +301,11 @@ class SafeFallbackController:
             return "COMMAND_OUT_OF_BOUNDS"
         if np.any(solution.slacks < -self.options.constraint_tolerance_m):
             return "NEGATIVE_SLACK_INVALID"
+        # Backend contract check.  The built-in NMPC derives slacks as
+        # max(0, -margin), so this only fires for a backend whose reported
+        # slacks do not cover its own constraint violations.  Such a backend
+        # would otherwise under-report slack and slip past SLACK_LIMIT_EXCEEDED.
+        # (Shape agreement is already enforced by ControlSolution.)
         if solution.chance_margins.size:
             compensated = solution.chance_margins + solution.slacks
             if float(np.min(compensated)) < -self.options.constraint_tolerance_m:
@@ -485,6 +495,12 @@ class SafeFallbackController:
                     consecutive_rejections=(primary_solution.consecutive_rejections),
                 )
             elif rejection_reason is None:
+                self._pre_accept_last_command = (
+                    None
+                    if self._last_accepted_command is None
+                    else self._last_accepted_command.copy()
+                )
+                self._pre_accept_consecutive_rejections = self._consecutive_rejections
                 self._last_accepted_command = primary_solution.command.copy()
                 self._fallback_position = None
                 self._fallback_yaw = None
@@ -536,6 +552,44 @@ class SafeFallbackController:
                 primary_solution.controller_timing,
                 safety_supervisor_time_ms=supervisor_time_ms,
             ),
+        )
+
+    def apply_deadline_fallback(
+        self,
+        solution: ControlSolution,
+        belief: VehicleBelief,
+    ) -> ControlSolution:
+        """Replace an accepted primary command after an outer deadline miss.
+
+        The runtime measures the end-to-end controller time (including this
+        supervisor) against the control period, which can miss even when the
+        supervisor's own ``solve_deadline_s`` check passed.  Under the realtime
+        qualification protocol that miss must turn into an *applied* fallback,
+        not only a telemetry label.  The acceptance recorded for this tick is
+        rolled back so ``HOLD_LAST_ACCEPTED`` never re-applies the late command.
+        Solutions already in fallback are returned unchanged.
+        """
+        if solution.fallback_active:
+            return solution
+        self._last_accepted_command = self._pre_accept_last_command
+        self._consecutive_rejections = self._pre_accept_consecutive_rejections + 1
+        self._latch_fallback_reference(belief)
+        fallback_command, fallback_level, command_source = self._fallback_command(belief)
+        maximum_slack = 0.0 if not solution.slacks.size else float(np.max(solution.slacks))
+        return self._assured_solution(
+            solution,
+            command=fallback_command,
+            solver_status=f"FALLBACK_{command_source}",
+            command_source=command_source,
+            solution_accepted=False,
+            fallback_active=True,
+            fallback_level=fallback_level,
+            fallback_reason="DEADLINE_MISSED",
+            consecutive_rejections=self._consecutive_rejections,
+            maximum_slack=maximum_slack,
+            elapsed_s=solution.solve_time_ms / 1000.0,
+            deadline_missed=True,
+            controller_timing=solution.controller_timing,
         )
 
     def _assured_solution(

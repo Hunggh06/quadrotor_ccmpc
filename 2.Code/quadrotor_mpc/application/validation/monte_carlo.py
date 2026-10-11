@@ -450,9 +450,14 @@ def _build_controller(config: NativeMuJoCoConfig):
 
 
 def _percentile(values: np.ndarray, quantile: float) -> float:
+    """Quantile of the finite samples, or NaN when there are none.
+
+    NaN (not 0.0) marks "no timing evidence": 0.0 would let an episode with no
+    recorded solves pass the real-time gate vacuously.
+    """
     finite = np.asarray(values, dtype=float)
     finite = finite[np.isfinite(finite)]
-    return float(np.quantile(finite, quantile)) if finite.size else 0.0
+    return float(np.quantile(finite, quantile)) if finite.size else float("nan")
 
 
 def _line_tracking_rmse(
@@ -1239,6 +1244,10 @@ def _numeric_summary(values: Iterable[float]) -> dict[str, float] | None:
     }
 
 
+def _format_median_ms(summary: Mapping[str, float] | None) -> str:
+    return "n/a" if summary is None else f"{summary['median']:.3f} ms"
+
+
 def _rate_summary(
     items: Sequence[NativeTrialResult],
     predicate,
@@ -1318,7 +1327,12 @@ def _group_gates(
     )
     timing_summary = summary[timing_field]
     timing_value = float(timing_summary["p95"]) if timing_summary is not None else float("inf")
-    timing_ok = timing_value <= controller_period_ms
+    # Every trial must carry timing evidence; trials without finite samples are
+    # dropped by _numeric_summary and would otherwise be silently ignored.
+    timing_evidence_complete = all(
+        math.isfinite(float(getattr(item, timing_field))) for item in items
+    )
+    timing_ok = timing_evidence_complete and timing_value <= controller_period_ms
     # A real-time qualification claim requires the realtime protocol, an
     # end-to-end deadline clock, and the timing gate.  Algorithmic runs are
     # never allowed to produce a real-time pass.
@@ -1383,7 +1397,8 @@ def _group_gates(
             "positive_slack_episodes": positive_slack_episodes,
             "fallback_episodes": fallback_episodes,
             "timing_percentile": protocol.timing_percentile,
-            "timing_across_trials_p95_ms": timing_value,
+            "timing_across_trials_p95_ms": (timing_value if math.isfinite(timing_value) else None),
+            "timing_evidence_complete": timing_evidence_complete,
             "controller_period_ms": controller_period_ms,
         },
     }
@@ -2191,7 +2206,11 @@ def _save_plot(
             clearances.append([trial.min_clearance_m for trial in subset])
             errors.append([trial.final_error_m for trial in subset])
             slack_rates.append(summary["positive_slack_episode_rate"]["rate"])
-            solver_p99.append(summary["p99_solver_ms"]["median"])
+            solver_p99.append(
+                summary["p99_solver_ms"]["median"]
+                if summary["p99_solver_ms"] is not None
+                else float("nan")
+            )
         position = x + offsets[mode]
         asymmetric = np.array([np.array(rates) - lows, np.array(highs) - rates])
         axes[0, 0].errorbar(
@@ -2304,7 +2323,7 @@ def _save_markdown_report(
                 f"{_format_rate(summary['collision_rate'])} | "
                 f"{summary['min_clearance_m']['mean']:.6f} m | "
                 f"{summary['max_slack_m']['mean']:.6f} m | "
-                f"{summary['p99_solver_ms']['median']:.3f} ms | "
+                f"{_format_median_ms(summary['p99_solver_ms'])} | "
                 f"{', '.join(summary['gates']['claim_blockers']) or summary['gates']['claim_status']} |"
             )
     lines.extend(

@@ -409,5 +409,39 @@ class NativeMonteCarloArtifactTests(unittest.TestCase):
             self.assertTrue(artifacts["report"].exists())
 
 
+class TimingEvidenceGateTests(unittest.TestCase):
+    """An episode without recorded solves must not pass the timing gate."""
+
+    def test_percentile_of_no_samples_is_nan_not_zero(self):
+        from quadrotor_mpc.application.validation.monte_carlo import _percentile
+
+        self.assertTrue(np.isnan(_percentile(np.array([]), 0.99)))
+        self.assertTrue(np.isnan(_percentile(np.array([np.nan, np.inf]), 0.99)))
+        self.assertAlmostEqual(_percentile(np.array([1.0, 2.0, 3.0]), 0.5), 2.0)
+
+    def test_trial_without_timing_evidence_fails_real_time_gate(self):
+        items = [trial("deterministic", seed, p99=10.0) for seed in range(10, 40)]
+        items[0] = trial("deterministic", 10, p99=float("nan"))
+        aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
+        gates = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]["gates"]
+        self.assertEqual(gates["real_time_p99"], "FAIL")
+        self.assertFalse(gates["details"]["timing_evidence_complete"])
+
+    def test_complete_fast_timing_still_passes(self):
+        items = [trial("deterministic", seed, p99=10.0) for seed in range(10, 40)]
+        aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
+        gates = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]["gates"]
+        self.assertEqual(gates["real_time_p99"], "PASS")
+        self.assertTrue(gates["details"]["timing_evidence_complete"])
+
+    def test_all_missing_timing_serializes_and_reports(self):
+        items = [trial("deterministic", seed, p99=float("nan")) for seed in range(10, 40)]
+        aggregate = aggregate_native_trials(items, protocol(), controller_period_ms=50.0)
+        level = aggregate["noise_levels"]["nominal"]["controllers"]["deterministic"]
+        self.assertIsNone(level["p99_solver_ms"])
+        self.assertIsNone(level["gates"]["details"]["timing_across_trials_p95_ms"])
+        json.dumps(aggregate, allow_nan=False)
+
+
 if __name__ == "__main__":
     unittest.main()

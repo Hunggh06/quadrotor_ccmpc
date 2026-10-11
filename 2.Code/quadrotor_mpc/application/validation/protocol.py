@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any
 
@@ -153,6 +153,44 @@ def select_applied_command(
         primary_valid=True,
         deadline_missed=deadline_missed,
         rejection_reasons=reasons,
+    )
+
+
+def reconcile_applied_command(
+    decision: AppliedCommandDecision,
+    *,
+    fallback_applied: bool,
+    fallback_reason: str = "",
+) -> AppliedCommandDecision:
+    """Make the recorded disposition describe the command actually applied.
+
+    ``select_applied_command`` states which command the protocol *requires*.
+    The runtime must enforce that, but if the stack cannot (for example no
+    safety supervisor is configured) or the supervisor fell back on its own
+    clock, telemetry must still report what reached the plant.  A label that
+    claims a fallback that never happened (or hides one that did) would
+    corrupt realtime-qualification statistics.
+    """
+    applied_is_fallback = decision.applied_command_source == FALLBACK_SOURCE
+    if bool(fallback_applied) == applied_is_fallback:
+        return decision
+    if fallback_applied:
+        disposition = (
+            FALLBACK_APPLIED_DEADLINE_MISS
+            if fallback_reason == "DEADLINE_MISSED"
+            else FALLBACK_APPLIED_PRIMARY_INVALID
+        )
+        return replace(
+            decision,
+            applied_command_source=FALLBACK_SOURCE,
+            primary_disposition=disposition,
+        )
+    return replace(
+        decision,
+        applied_command_source=PRIMARY_SOURCE,
+        primary_disposition=(
+            PRIMARY_APPLIED_LATE if decision.deadline_missed else PRIMARY_APPLIED_ON_TIME
+        ),
     )
 
 

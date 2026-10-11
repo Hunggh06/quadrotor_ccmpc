@@ -32,7 +32,8 @@ class UncertaintyPropagator:
         init_vel_noise: float = 0.1,
         init_att_noise: float = 0.03,
     ):
-        # Process noise covariance W (9x9)
+        # Continuous-time process-noise intensity W_c (9x9); propagate() adds
+        # W_c * dt per step (Theory Ch. 14), so arguments are in units/sqrt(s).
         self.W = np.diag(
             np.concatenate(
                 [
@@ -103,7 +104,7 @@ class UncertaintyPropagator:
 
         .. math::
 
-            \Gamma^{k+1} = F^k \, \Gamma^k \, F^{k\,T} + W
+            \Gamma^{k+1} = F^k \, \Gamma^k \, F^{k\,T} + W \, \Delta t
 
         Args:
             Gamma_0: Initial state covariance (9x9).

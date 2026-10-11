@@ -531,8 +531,10 @@ def run_coupled_simulation(
                 time.perf_counter_ns() - controller_tick_start_ns
             ) / 1_000_000.0
             from quadrotor_mpc.application.validation.protocol import (
+                FALLBACK_SOURCE,
                 MonteCarloProtocol,
                 deadline_facts,
+                reconcile_applied_command,
                 select_applied_command,
             )
 
@@ -552,6 +554,20 @@ def run_coupled_simulation(
                 ),
                 deadline_missed=deadline_missed,
                 rejection_reasons=((solution.fallback_reason,) if solution.fallback_reason else ()),
+            )
+            if decision.applied_command_source == FALLBACK_SOURCE and not solution.fallback_active:
+                # The protocol requires a fallback (e.g. realtime deadline miss on
+                # the end-to-end clock) but the supervisor accepted the primary on
+                # its own clock: enforce the fallback so the plant input matches.
+                apply_deadline_fallback = getattr(
+                    active_controller, "apply_deadline_fallback", None
+                )
+                if apply_deadline_fallback is not None:
+                    solution = apply_deadline_fallback(solution, current_belief)
+            decision = reconcile_applied_command(
+                decision,
+                fallback_applied=bool(solution.fallback_active),
+                fallback_reason=solution.fallback_reason,
             )
             applied_command_source = decision.applied_command_source
             primary_disposition = decision.primary_disposition

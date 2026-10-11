@@ -460,7 +460,8 @@ class CCMPC:
 
         for k in range(self.control_horizon):
             p_mav = x_guess[:3, k + 1]
-            p_obs = obs.p_hat + obs.v_hat * self.dt * k
+            # Same time base as the constrained state x[:3, k+1].
+            p_obs = obs.p_hat + obs.v_hat * self.dt * (k + 1)
             diff = p_mav - p_obs
             d = float(np.linalg.norm(diff))
 
@@ -590,13 +591,20 @@ class CCMPC:
         # ---- Pre-compute uncertainty propagation (Eq 19) ----
         if Gamma_0 is None:
             Gamma_0 = self.uncertainty.Gamma_0.copy()
-        Gamma_list = self.uncertainty.propagate(Gamma_0, x_guess, u_guess, self.dynamics)
+        # The covariance must be propagated with the same timestep as the QP
+        # dynamics; relying on propagate()'s default silently desynchronises
+        # F_k and the process noise whenever ``timestep=`` is overridden.
+        Gamma_list = self.uncertainty.propagate(
+            Gamma_0, x_guess, u_guess, self.dynamics, dt=self.dt
+        )
 
         # ---- iMPC loop ----
         converged = False
-        fresh_attempts = 0  # FIX #4: track how many fresh restarts we've done
+        solved = False  # True once the QP has returned a solution for the current guess
+        fresh_attempts = 0  # number of fresh restarts performed
         _max_fresh = 2  # allow up to 2 independent fresh restarts
-        for iteration in range(self._max_iter):
+        iteration = 0
+        while iteration < self._max_iter:
             # 1. Set initial state, goal, and last command
             self._initial_state.value = initial_state
             # DPP-compliant goal params: set _goal_scale and _goal_Qg_vec
@@ -640,33 +648,7 @@ class CCMPC:
             # 4. Set chance constraint params
             # Predict obstacle positions for each horizon step using
             # the last-loop trajectory as the linearization point.
-            obs_predictions: list[list[dict]] = [[] for _ in range(N)]
-            if obstacle_manager is not None:
-                for i_obs, obs in enumerate(obstacle_manager.obstacles):
-                    if i_obs >= self._max_obs:
-                        break
-                    # Pre-compute Omega^{1/2} for this obstacle (constant size/orientation).
-                    # Delegates to utils.Omega_matrix so this stays in lockstep with the
-                    # single fixed rotation convention (R_o @ diag(...) @ R_o.T, since
-                    # R_o is the obstacle-to-world rotation) instead of re-deriving it
-                    # inline with a divergent (and previously incorrect) sign.
-                    Omega = Omega_matrix(obs.axes, self.mav_radius, obs.R_o)
-                    L_const = Omega_half(Omega)
-
-                    pos = obs.p_hat.copy()
-                    vel = obs.v_hat.copy()
-                    Sigma = obs.Sigma.copy()
-                    for k in range(N):
-                        p_mav_guess_k = x_guess[:3, k + 1]
-                        obs_predictions[k].append(
-                            dict(
-                                pos=pos.copy(),
-                                Sigma=Sigma.copy(),
-                                L=L_const,
-                            )
-                        )
-                        pos = pos + vel * self.dt
-                        Sigma = Sigma + obs.Sigma_v * self.dt**2
+            obs_predictions = self._predict_obstacles(obstacle_manager, N, x_guess)
 
             for k in range(N):
                 p_mav_guess_k = x_guess[:3, k + 1]
@@ -712,42 +694,41 @@ class CCMPC:
                 )
             except Exception as e:
                 print(f"  [CCMPC] Iter {iteration}: Solver exception: {e}")
-                break
+                solve_failed = True
+            else:
+                solve_failed = self._states.value is None
 
             # 6. Check solver status
-            if self._states.value is None:
-                # FIX #4 (CRITICAL): old code used a single fresh_attempt flag that
-                # could only trigger ONE retry, and after that immediately fell through
-                # to emergency hover without re-entering the iMPC loop.
-                # New logic: up to _max_fresh restarts, each re-entering the full loop.
+            if solve_failed:
+                # A failed QP never yields a usable trajectory: restart the
+                # whole iMPC loop from a fresh straight-line guess (iteration
+                # counter reset, covariance re-propagated along the new guess)
+                # or hand over to emergency hover once restarts are exhausted.
+                # The previous ``for``-loop ``continue`` only advanced to the
+                # next iteration, so a failure on the last iteration returned
+                # the unsolved seed trajectory as if it were a solution.
                 if fresh_attempts < _max_fresh:
                     fresh_attempts += 1
                     print(
                         f"  [CCMPC] Solver fail (iter {iteration}), "
                         f"fresh restart {fresh_attempts}/{_max_fresh}..."
                     )
-                    N = self.control_horizon
-                    # Build a new straight-line guess toward goal
-                    x_guess = np.tile(initial_state, (N + 1, 1)).T
-                    goal_dir = goal - initial_state[:3]
-                    gd_norm = float(np.linalg.norm(goal_dir))
-                    if gd_norm > 0.1:
-                        # Vary target speed per attempt to escape local infeasibility
-                        speed_frac = [1.0, 0.5][fresh_attempts - 1]
-                        target_speed = min(speed_frac * 2.0, gd_norm / self.horizon_time)
-                        init_vel = goal_dir / gd_norm * target_speed
-                        for k in range(N):
-                            x_guess[:3, k + 1] = x_guess[:3, k] + init_vel * self.dt
-                            x_guess[3:6, k + 1] = init_vel
-                    u_guess = np.zeros((4, N))
+                    x_guess, u_guess = self._fresh_guess(
+                        initial_state, goal, speed_frac=[1.0, 0.5][fresh_attempts - 1]
+                    )
+                    Gamma_list = self.uncertainty.propagate(
+                        Gamma_0, x_guess, u_guess, self.dynamics, dt=self.dt
+                    )
                     # Invalidate warm-start so next call also uses a fresh guess
                     self._previous_trajectory = None
                     self._previous_controls = None
-                    # Re-enter iMPC from iteration 0
+                    solved = False
+                    iteration = 0
                     continue
                 print(f"  [CCMPC] All {_max_fresh} fresh restarts exhausted -> emergency hover")
                 return self._emergency_hover(initial_state, goal)
 
+            solved = True
             new_x = np.array(self._states.value)
             new_u = np.array(self._controls.value)
 
@@ -762,6 +743,11 @@ class CCMPC:
             # 8. Update guess for next iMPC iteration
             x_guess = new_x
             u_guess = new_u
+            iteration += 1
+
+        if not solved:
+            # max_iter <= 0: no QP was ever solved, never return the raw seed.
+            return self._emergency_hover(initial_state, goal)
 
         # ---- Store for next control cycle (warm-start) ----
         self._previous_trajectory = np.copy(x_guess)
@@ -773,6 +759,85 @@ class CCMPC:
             print(f"  [CCMPC] Solved: {status}, cost={self._problem.value:.2f}")
 
         return x_guess, u_guess
+
+    def _select_obstacles(self, obstacle_manager, x_guess: npt.NDArray[np.float64]) -> list:
+        """Pick the ``max_obs`` obstacles with the closest time-aligned approach.
+
+        Ranking uses the minimum, over the horizon, of the distance between the
+        guess position ``x[:3, k+1]`` and the obstacle mean predicted at the same
+        time ``(k+1)*dt``.  Taking the first ``max_obs`` entries of the list
+        silently dropped nearer obstacles whenever more were tracked.
+        """
+        obstacles = list(obstacle_manager.obstacles)
+        if len(obstacles) <= self._max_obs:
+            return obstacles
+        steps = np.arange(1, x_guess.shape[1], dtype=float) * self.dt
+        positions = x_guess[:3, 1:].T  # (N, 3)
+
+        def closest_approach(obs) -> float:
+            predicted = obs.p_hat[None, :] + steps[:, None] * obs.v_hat[None, :]
+            return float(np.min(np.linalg.norm(positions - predicted, axis=1)))
+
+        ranked = sorted(range(len(obstacles)), key=lambda i: (closest_approach(obstacles[i]), i))
+        return [obstacles[i] for i in ranked[: self._max_obs]]
+
+    def _predict_obstacles(
+        self,
+        obstacle_manager,
+        N: int,
+        x_guess: npt.NDArray[np.float64],
+    ) -> list[list[dict]]:
+        """Obstacle mean/covariance aligned with the constrained vehicle state.
+
+        Horizon step ``k`` constrains the vehicle position ``x[:3, k+1]``,
+        i.e. time ``(k+1)*dt``.  The obstacle prediction for that step must be
+        evaluated at the same time; using ``k*dt`` placed a moving obstacle one
+        step behind (``v*dt`` error) in every chance constraint.
+        """
+        obs_predictions: list[list[dict]] = [[] for _ in range(N)]
+        if obstacle_manager is None:
+            return obs_predictions
+        for obs in self._select_obstacles(obstacle_manager, x_guess):
+            # Omega^{1/2} is constant (size/orientation); utils.Omega_matrix keeps
+            # the single rotation convention R_o @ diag(...) @ R_o.T.
+            Omega = Omega_matrix(obs.axes, self.mav_radius, obs.R_o)
+            L_const = Omega_half(Omega)
+
+            pos = obs.p_hat.copy()
+            vel = obs.v_hat.copy()
+            Sigma = obs.Sigma.copy()
+            for k in range(N):
+                # Advance to t = (k+1)*dt before recording step k.
+                pos = pos + vel * self.dt
+                Sigma = Sigma + obs.Sigma_v * self.dt**2
+                obs_predictions[k].append(
+                    dict(
+                        pos=pos.copy(),
+                        Sigma=Sigma.copy(),
+                        L=L_const,
+                    )
+                )
+        return obs_predictions
+
+    def _fresh_guess(
+        self,
+        initial_state: npt.NDArray[np.float64],
+        goal: npt.NDArray[np.float64],
+        speed_frac: float,
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """Straight-line constant-velocity guess toward the goal for a restart."""
+        N = self.control_horizon
+        x_guess = np.tile(initial_state, (N + 1, 1)).T
+        goal_dir = goal - initial_state[:3]
+        gd_norm = float(np.linalg.norm(goal_dir))
+        if gd_norm > 0.1:
+            # Vary target speed per attempt to escape local infeasibility
+            target_speed = min(speed_frac * 2.0, gd_norm / self.horizon_time)
+            init_vel = goal_dir / gd_norm * target_speed
+            for k in range(N):
+                x_guess[:3, k + 1] = x_guess[:3, k] + init_vel * self.dt
+                x_guess[3:6, k + 1] = init_vel
+        return x_guess, np.zeros((4, N))
 
     def _emergency_hover(
         self,
