@@ -1,0 +1,161 @@
+﻿name: ccmpc-mujoco-native-ira-win-gate-small
+
+start:
+  x: 0.0
+  y: 0.0
+  z: 1.2
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0
+
+goal:
+  position: {x: 2.5, y: 0.0, z: 1.2}
+  euler: {roll: 0.0, pitch: 0.0, yaw: 0.0}
+
+controller:
+  bounds:
+    thrust: 0.085
+    torque_rp: 0.002
+    torque_yaw: 0.0004
+  safety_margin: 0.05
+  covariance_propagation:
+    enabled: true
+    mode: open_loop
+    linearization: analytic_first_order
+    acceleration_process_std_mps2: 0.60
+    angular_acceleration_process_std_radps2: 0.80
+    obstacle_acceleration_process_std_mps2: 0.80
+    finite_difference_epsilon: 1.0e-6
+    minimum_covariance_eigenvalue: 1.0e-12
+  chance_constraints:
+    enabled: true
+    type: spherical
+    individual_epsilon: 0.05
+    risk_budget:
+      semantics: joint
+      allocation: uniform
+      total_epsilon: 0.10
+      tolerance: 1.0e-12
+    soft_constraint: true
+    slack_penalty: 10000000.0
+    slack_tolerance_m: 1.0e-6
+    minimum_direction_norm_m: 1.0e-8
+    distance_smoothing_m2: 1.0e-6
+  safety_fallback:
+    enabled: true
+    solve_deadline_s: 0.05
+    reject_on_deadline_miss: false
+    guarantee_slack_tolerance_m: 1.0e-6
+    maximum_acceptable_slack_m: 0.02
+    accept_certified_slack: true
+    constraint_tolerance_m: 1.0e-6
+    maximum_solver_residual: 1.0e-3
+    command_bound_tolerance: 1.0e-6
+    hold_last_command_steps: 1
+    emergency_after_consecutive_rejections: 20
+    position_kp_xy: 2.0
+    position_kd_xy: 1.8
+    vertical_kp: 4.0
+    vertical_kd: 2.4
+    attitude_kp: 0.004
+    attitude_kd: 0.0008
+    emergency_rate_damping: 0.0006
+    maximum_tilt_rad: 0.30
+
+simulation:
+  duration_s: 6.0
+  mpc_timestep_s: 0.05
+  mujoco_timestep_s: 0.002
+  horizon_steps: 20
+  max_solver_iterations: 60
+  stop_on_goal: false
+  goal_tolerance_m: 0.25
+  stop_on_collision: false
+
+estimation:
+  enabled: true
+  type: error_state_ekf
+  seed: 1001
+  minimum_covariance_eigenvalue: 1.0e-12
+  sensor:
+    position_std_m: 0.06
+    velocity_std_mps: 0.10
+    attitude_std_rad: 0.025
+    angular_rate_std_radps: 0.03
+    obstacle_position_std_m: 0.10
+    vehicle_dropout_probability: 0.0
+    obstacle_dropout_probability: 0.0
+    position_bias_rw_std_m_sqrt_s: 0.0
+    velocity_bias_rw_std_mps_sqrt_s: 0.0
+    attitude_bias_rw_std_rad_sqrt_s: 0.0
+    angular_rate_bias_rw_std_radps_sqrt_s: 0.0
+    obstacle_bias_rw_std_m_sqrt_s: 0.0
+  vehicle_filter:
+    acceleration_process_std_mps2: 0.60
+    angular_acceleration_process_std_radps2: 0.80
+    initial_position_std_m: 0.08
+    initial_velocity_std_mps: 0.12
+    initial_attitude_std_rad: 0.04
+    initial_angular_rate_std_radps: 0.08
+  obstacle_filter:
+    acceleration_process_std_mps2: 0.80
+    initial_position_std_m: 0.10
+    initial_velocity_std_mps: 0.75
+
+viewer:
+  camera_mode: follow
+  distance: 7.0
+  azimuth: 60.0
+  elevation: -30.0
+  realtime_factor: 1.0
+  show_trail: true
+  show_prediction: true
+  show_obstacle_prediction: true
+  show_safety_envelopes: true
+  show_contacts: false
+  max_trail_points: 600
+  max_trail_segments: 240
+  status_every_steps: 10
+
+panel:
+  enabled: true
+  update_hz: 15.0
+  history_seconds: 30.0
+  stop_when_closed: true
+  maximum_alerts: 12
+
+recording:
+  enabled: true
+  output_dir: outputs/native_ira_win_corridor
+  max_buffer_samples: 5000
+
+obstacles:
+  - name: corridor_left
+    type: static
+    position: [1.25, 0.50, 1.20]
+    radius: 0.05
+
+  - name: corridor_right
+    type: static
+    position: [1.25, -0.50, 1.20]
+    radius: 0.05
+
+  - name: far_obstacle
+    type: static
+    position: [1.25, 2.00, 1.20]
+    radius: 0.05
+
+experiment:
+  ira:
+    enabled: true
+    shadow_only: false
+    alpha: 0.01
+    max_ira_updates: 1
+    active_tol_m: 0.01
+    feasibility_tol_m: 1.0e-6
+    delta_min: 1.0e-5
+    delta_max: 0.20
+    delta_tol: 1.0e-6
+    max_slack_m: 0.08
+    output_dir: outputs/native_ira_win_corridor
+

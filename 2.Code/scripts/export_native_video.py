@@ -17,10 +17,10 @@ from pathlib import Path
 
 import numpy as np
 
-from quadrotor_mpc.application.native.telemetry import load_native_recording
-from quadrotor_mpc.control.nmpc.core import DRONE_RADIUS
-from quadrotor_mpc.infrastructure.mujoco.plant import MuJoCoPlant
-from quadrotor_mpc.interfaces.desktop.viewer import NativeMuJoCoConfig
+from simulation.application.native.telemetry import load_native_recording
+from simulation.control.ccmpc_13state.core import DRONE_RADIUS
+from simulation.infrastructure.mujoco.plant import MuJoCoPlant
+from simulation.interfaces.desktop.viewer import NativeMuJoCoConfig
 
 WIDTH, HEIGHT = 960, 720  # the plant MJCF declares this offscreen buffer size
 
@@ -94,6 +94,17 @@ def main() -> int:
     parser.add_argument("--elevation", type=float, default=-25.0)
     parser.add_argument("--speed", type=float, default=1.0, help="playback speed (1 = real time)")
     parser.add_argument("--no-envelopes", action="store_true", help="hide obstacle safety spheres")
+    parser.add_argument(
+        "--chance-envelopes",
+        action="store_true",
+        help="draw the recorded tightened chance-constraint radii instead of only the fixed base radii",
+    )
+    parser.add_argument(
+        "--risk-node",
+        type=int,
+        default=1,
+        help="horizon node used for the dynamic chance envelope (default: 1)",
+    )
     args = parser.parse_args()
 
     import mujoco
@@ -110,6 +121,16 @@ def main() -> int:
     goal = np.array([config.goal_position[k] for k in "xyz"], dtype=float)
     radii = [o["radius"] + config.safety_margin + DRONE_RADIUS for o in obstacles]
     has_pred = len(recording["predicted_positions"]) == n
+    tightened_horizon = recording.get("tightened_safety_radius_horizons")
+    dynamic_radii = None
+    if args.chance_envelopes:
+        if tightened_horizon is None or len(tightened_horizon) != n:
+            raise SystemExit("recording has no tightened safety-radius horizon")
+        if not 0 <= args.risk_node < tightened_horizon.shape[1]:
+            raise SystemExit(
+                f"--risk-node must lie in [0, {tightened_horizon.shape[1] - 1}]"
+            )
+        dynamic_radii = np.asarray(tightened_horizon[:, args.risk_node, :], dtype=float)
     fps = args.speed / config.mpc_timestep_s
 
     cam = mujoco.MjvCamera()
@@ -153,8 +174,11 @@ def main() -> int:
             draw = SceneDrawer(mujoco, renderer.scene)
             draw.sphere(goal, 0.12, (1.0, 0.78, 0.05, 0.9))
             if not args.no_envelopes:
-                for p, r in zip(obs_pred[:, 0, :], radii):
+                frame_radii = radii if dynamic_radii is None else dynamic_radii[i]
+                for obstacle_index, (p, r) in enumerate(zip(obs_pred[:, 0, :], frame_radii)):
                     draw.sphere(p, r, (1.0, 0.45, 0.05, 0.12))
+                    if dynamic_radii is not None:
+                        draw.sphere(p, float(r), (0.20, 0.65, 1.0, 0.16))
             for pred in obs_pred:
                 draw.polyline(pred, (1.0, 0.4, 0.15, 0.55), 0.009, 40)
             draw.polyline(trail, (0.2, 0.55, 1.0, 0.75), 0.018)
@@ -166,10 +190,15 @@ def main() -> int:
             frame = renderer.render().copy()
             if Image is not None:
                 img = Image.fromarray(frame)
+                overlay = (
+                    f"t={float(row['time_s']):5.2f}s  clearance={float(row['min_clearance_m']):.3f} m  "
+                    f"goal dist={np.linalg.norm(pos - goal):.2f} m"
+                )
+                if dynamic_radii is not None:
+                    overlay += f"  r_tight(max)={float(np.max(dynamic_radii[i])):.3f} m"
                 ImageDraw.Draw(img).text(
                     (12, 10),
-                    f"t={float(row['time_s']):5.2f}s  clearance={float(row['min_clearance_m']):.3f} m  "
-                    f"goal dist={np.linalg.norm(pos - goal):.2f} m",
+                    overlay,
                     fill=(255, 255, 255),
                 )
                 frame = np.asarray(img)

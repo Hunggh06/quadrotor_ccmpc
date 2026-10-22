@@ -1,70 +1,134 @@
-# Quadrotor MPC Research Workbench
+# CC-MPC simulation code
 
-A reproducible simulation, comparison and reporting environment for
-deterministic MPC, chance-constrained MPC and a 13-state quaternion
-NMPC/MuJoCo track.
+Thư mục này chứa code hiện tại của `ccmpc_project`. Chạy các lệnh dưới đây từ
+`2.Code/`, không phải từ thư mục gốc repository.
 
-Version `2.0.1` is a release-stabilized research workbench. The verified native
-campaign is `VALIDATED_WITH_LIMITATIONS`: the joint risk budget is a per-solve
-bound rather than an episode-wide guarantee, and solver timing currently blocks
-a real-time claim.
+## Cài đặt
 
-**Documentation starts at [`docs/README.md`](docs/README.md).**
-
-## Install
+Python 3.10+; Python 3.12 được dùng để kiểm tra bản đồng bộ.
 
 ```bash
-uv sync --all-extras --locked
+uv sync --extra full --extra dev --locked
 ```
 
-Details, pip installation and OS packages:
-[installation](docs/getting-started/installation.md).
-
-## Commands
-
-| Command | What it does | Guide |
-|---|---|---|
-| `quadrotor-mpc-app` | desktop workbench: simulate, Monte Carlo, results | [workbench](docs/getting-started/workbench.md) |
-| `quadrotor-mpc-native` | one native NMPC/MuJoCo episode (3-D viewer, headless or replay) | [native simulation](docs/guides/native-simulation.md) |
-| `quadrotor-mpc-monte-carlo` | paired native Monte Carlo campaign | [Monte Carlo campaigns](docs/guides/monte-carlo.md) |
-| `quadrotor-mpc-run` | paired 9-state ODE experiment with report bundle | [ODE experiments](docs/guides/ode-experiments.md) |
-| `quadrotor-mpc-sim` | single 9-state ODE closed loop | [ODE experiments](docs/guides/ode-experiments.md) |
-| `quadrotor-mpc-sweep` | 9-state parameter sweep | [ODE experiments](docs/guides/ode-experiments.md#parameter-sweeps) |
-| `quadrotor-mpc-dashboard` | Streamlit dashboard for the ODE track | [ODE experiments](docs/guides/ode-experiments.md#streamlit-dashboard) |
-
-On Windows, double-click `Quadrotor MPC Workbench.bat` at the repository root
-to open the workbench.
-
-![Workbench comparing three controllers](../assets/readme/workbench-results-compare.png)
-
-## First commands
+Hoặc cài bằng pip trong môi trường ảo đã kích hoạt:
 
 ```bash
-uv run quadrotor-mpc-app
-uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml --headless --seed 1001
-uv run quadrotor-mpc-run --config config/scenarios/static_obstacle.yaml --compare
-uv run pytest -q
+python -m pip install -e ".[full,dev]"
 ```
 
-A guided tour is in [first run](docs/getting-started/first-run.md).
+Extra `ui` cung cấp do-mpc, CasADi và Qt; `mujoco` cung cấp plant/renderer;
+`video` cung cấp các gói xuất video. `full` gộp các nhóm chạy này, còn `dev`
+cung cấp công cụ kiểm thử/build. Không cần cài extra `notebooks` để chạy code.
 
-## Directory map
+## Cấu trúc
 
-```text
-2.Code/
-├── quadrotor_mpc/      installable Python package
-│   ├── core/           stable contracts and shared domain values
-│   ├── control/        9-state CC-MPC and native quaternion NMPC
-│   ├── estimation/     sensor simulation, ESEKF and obstacle tracking
-│   ├── infrastructure/ MuJoCo plant and resource adapters
-│   ├── application/    simulation, native runtime, experiments and validation
-│   ├── reporting/      Plotly, Matplotlib and HTML reports
-│   └── interfaces/     CLI, Streamlit, MuJoCo viewer, Qt panel and workbench
-├── config/             native scenarios (top level) and ODE scenarios (scenarios/)
-├── docs/               documentation, start at docs/README.md
-├── models/             sourced MuJoCo MJCF and mesh assets
-├── scripts/            release check and Qt smoke test
-├── tests/              unit, integration and architecture tests
-├── validation/         committed evidence
-└── pyproject.toml      build metadata and console entry points
+| Đường dẫn | Vai trò |
+|---|---|
+| `simulation/core/` | Belief/control contracts, tham số xe, va chạm, timing |
+| `simulation/control/ccmpc_13state/` | NMPC quaternion, chance constraints, covariance, safety fallback |
+| `simulation/control/ccmpc_13state/experimental_joint_risk/` | Joint-risk NLP thử nghiệm, chỉ bật khi được yêu cầu |
+| `simulation/control/ccmpc_9state/` | Track CVXPY 9-state tham chiếu |
+| `simulation/estimation/` | ESEKF và tracker vật cản; truth baseline |
+| `simulation/infrastructure/` | Resource lookup và adapter MuJoCo |
+| `simulation/application/` | Runtime native, telemetry, replay, validation helpers |
+| `simulation/interfaces/` | CLI native, viewer MuJoCo và panel Qt |
+| `visualization/reporting/` | Đồ thị từ bản ghi |
+| `config/` | Cấu hình controller/native và kịch bản YAML |
+| `models/bitcraze_crazyflie_2/` | XML, mesh và giấy phép Crazyflie 2 |
+| `experiments/` | Runner, ablation, joint-risk, phân tích và export |
+| `scripts/` | Xuất video, báo cáo và hình minh họa |
+| `tests/` | Kiểm thử joint-risk, export và phân tích paired-seed |
+
+Giữ nguyên tên package `simulation` và `visualization`: code, entry point và
+resource lookup đều dùng cấu trúc này. Một số thư mục là namespace package
+(PEP 420) nên không có `__init__.py`.
+
+## Mô phỏng native
+
+```bash
+# Kiểm tra cấu hình, không chạy solver hay viewer
+uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml --validate-config
+
+# Headless, có ghi telemetry
+uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml --headless --mode joint_uniform --seed 1001 --duration 10
+
+# Viewer MuJoCo + panel Qt
+uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml
+
+# Chỉ mở viewer, không mở panel
+uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml --no-panel
 ```
+
+`--mode` nhận `deterministic`, `individual`, `joint_uniform`. Các tùy chọn khác:
+`--noise-scale`, `--duration`, `--seed`, `--camera follow`, `--camera fixed`,
+`--no-record`, `--progress-json` (headless). Xem đầy đủ bằng `--help`.
+
+Mỗi lần chạy có thể tạo `telemetry.csv`, `trajectory.npz`, `scenario.yaml`,
+`summary.yaml` và event log trong `outputs/native/<run>/`.
+
+## Joint-risk thử nghiệm
+
+`joint_uniform` trong CLI native là **baseline chia đều rủi ro**, không phải
+joint-risk NLP tối ưu phân bổ. Để so sánh baseline với joint-risk NLP:
+
+```bash
+uv run python experiments/joint_risk/run_joint_risk.py --scenario five_lowu_narrow --variant uniform --variant hard_uniform --variant joint_hard --seed 1001 --duration 6 --tag demo
+```
+
+- `uniform`: CC-MPC chia đều rủi ro, giữ thiết lập soft/hard của YAML.
+- `hard_uniform`: chia đều rủi ro, hard chance constraints.
+- `joint_soft`: joint-risk NLP với relaxation mềm.
+- `joint_hard`: joint-risk NLP với hard chance constraints, formulation `required`.
+- `joint_required`: alias của `joint_hard`.
+
+Các scene hiện có: `five_lowu_narrow`, `five_lowu`, `five_through`, `cc_ablation`.
+Kết quả và metadata được ghi vào `outputs/joint_risk/`.
+
+Xem kế hoạch benchmark nhiều seed mà chưa chạy solver:
+
+```bash
+uv run python experiments/joint_risk/run_joint_multiseed.py --dry-run
+```
+
+Bỏ `--dry-run` để chạy kế hoạch 90 trường hợp có hỗ trợ tiếp tục; đây là tác vụ
+tốn thời gian. Script kiểm tra fingerprint nguồn/cấu hình trước khi nối kết quả
+vào một đợt chạy cũ. Các script phân tích/export cần bản ghi đã tạo ở máy bạn;
+repo không chứa sẵn kết quả.
+
+## Replay, video và báo cáo
+
+Thay `<run>` bằng thư mục bản ghi thực tế:
+
+```bash
+uv run quadrotor-mpc-native --replay outputs/native/<run>
+uv run python scripts/export_native_video.py outputs/native/<run> --camera orbit
+uv run python scripts/report_native_run.py outputs/native/<run>
+```
+
+Không truyền đường dẫn cho hai script export/report sẽ chọn bản ghi native
+mới nhất. Export video phát lại trạng thái đã lưu qua renderer, không giải lại
+NMPC. Báo cáo gồm `report.png`, `report_3d.html`, `report_timeseries.html`.
+
+## Kiểm thử và build
+
+```bash
+uv run python -m unittest discover -s tests -v
+uv run python -m build
+```
+
+Test gồm kiểm tra phép nội suy/hiển thị, thống kê paired-seed bằng dữ liệu tổng
+hợp, và các bài toán joint-risk nhỏ có giải NLP thật. Chạy test cần các gói
+solver trong extra `full`, nhưng không cần cửa sổ đồ họa hay dữ liệu output cũ.
+
+## Lưu ý
+
+- Đây là nền tảng nghiên cứu, chưa phải flight controller triển khai thực tế.
+- Risk budget được áp dụng theo horizon; không suy ra bảo đảm xác suất va chạm
+  cho toàn episode chỉ từ một lần solve hoặc từ kết quả vài seed.
+- Soft constraints, solver failure và fallback cần được đọc cùng telemetry;
+  không xem trạng thái solver thành công là bằng chứng an toàn tuyệt đối.
+- Không đưa `.venv/`, `__pycache__/`, `outputs/`, dữ liệu thử nghiệm hay slide vào Git.
+- Các command của workbench/Streamlit/Monte Carlo CLI cũ không thuộc bản code
+  rút gọn này. Native CLI duy nhất được đăng ký là `quadrotor-mpc-native`.
+- Giữ [MIT license](LICENSE) và [giấy phép model](models/bitcraze_crazyflie_2/LICENSE).

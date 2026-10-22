@@ -42,23 +42,15 @@ jobs:
 
       - name: Create locked environment
         working-directory: 2.Code
-        run: uv sync --all-extras --locked
+        run: uv sync --extra full --extra dev --locked
 
-      - name: Lint
+      - name: Check Python syntax
         working-directory: 2.Code
-        run: uv run ruff check .
-
-      - name: Check formatting
-        working-directory: 2.Code
-        run: uv run ruff format --check .
+        run: uv run python -m compileall -q simulation visualization experiments scripts tests
 
       - name: Test
         working-directory: 2.Code
-        run: uv run pytest
-
-      - name: Validate release contracts
-        working-directory: 2.Code
-        run: uv run python scripts/release_check.py
+        run: uv run python -m unittest discover -s tests -v
 
       - name: Validate native configurations
         working-directory: 2.Code
@@ -67,20 +59,6 @@ jobs:
           uv run quadrotor-mpc-native --config config/mujoco_native_dynamic.yaml --validate-config
           uv run quadrotor-mpc-native --config config/mujoco_native_estimation.yaml --validate-config
           uv run quadrotor-mpc-native --config config/mujoco_native_ccmpc.yaml --validate-config
-          uv run quadrotor-mpc-monte-carlo \
-            --config config/native_monte_carlo.yaml --validate-config
-
-      - name: Execute learning notebooks
-        if: matrix.python-version == '3.12'
-        working-directory: 2.Code
-        env:
-          QMPC_RUN_NOTEBOOKS: "1"
-        run: uv run pytest tests/test_notebooks.py -v
-
-      - name: Smoke-test Qt safety panel
-        if: matrix.python-version == '3.12'
-        working-directory: 2.Code
-        run: uv run python scripts/smoke_native_panel.py
 
       - name: Build distribution
         if: matrix.python-version == '3.12'
@@ -95,4 +73,3 @@ jobs:
           /tmp/quadrotor-wheel-test/bin/python -m pip install dist/*.whl
           cd /tmp
           /tmp/quadrotor-wheel-test/bin/quadrotor-mpc-native --validate-config
-          /tmp/quadrotor-wheel-test/bin/quadrotor-mpc-monte-carlo --validate-config

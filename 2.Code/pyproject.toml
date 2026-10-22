@@ -24,10 +24,13 @@ dependencies = [
 [project.optional-dependencies]
 qp = ["cvxpy>=1.5,<2.0", "clarabel>=0.9,<1.0", "osqp>=0.6,<2.0"]
 ui = [
-    "casadi>=3.6,<4.0", "do-mpc>=4.6,<6.0", "streamlit>=1.35,<2.0",
+    "casadi>=3.6,<4.0", "do-mpc>=4.6,<6.0",
     "graphviz>=0.20,<1.0", "PySide6>=6.7,<7.0", "pyqtgraph>=0.13.7,<1.0",
 ]
 mujoco = ["mujoco>=3.2,<4.0"]
+video = [
+    "imageio>=2.34,<3.0", "imageio-ffmpeg>=0.4.9,<1.0", "Pillow>=10.0,<12.0",
+]
 notebooks = [
     "jupyterlab>=4.2,<5.0", "ipykernel>=6.29,<8.0", "nbclient>=0.10,<1.0",
     "nbformat>=5.10,<6.0",
@@ -35,26 +38,21 @@ notebooks = [
 dev = ["pytest>=8,<10", "ruff==0.16.0", "mypy>=1.10,<2.0", "build>=1.2,<2.0"]
 full = [
     "cvxpy>=1.5,<2.0", "clarabel>=0.9,<1.0", "osqp>=0.6,<2.0",
-    "casadi>=3.6,<4.0", "do-mpc>=4.6,<6.0", "streamlit>=1.35,<2.0",
+    "casadi>=3.6,<4.0", "do-mpc>=4.6,<6.0",
     "graphviz>=0.20,<1.0", "mujoco>=3.2,<4.0", "PySide6>=6.7,<7.0",
     "pyqtgraph>=0.13.7,<1.0",
+    "imageio>=2.34,<3.0", "imageio-ffmpeg>=0.4.9,<1.0", "Pillow>=10.0,<12.0",
 ]
 
 [project.scripts]
-quadrotor-mpc-run = "quadrotor_mpc.interfaces.cli.experiment:main"
-quadrotor-mpc-sim = "quadrotor_mpc.interfaces.cli.simulation:main"
-quadrotor-mpc-sweep = "quadrotor_mpc.interfaces.cli.sweep:main"
-quadrotor-mpc-native = "quadrotor_mpc.interfaces.cli.native:main"
-quadrotor-mpc-monte-carlo = "quadrotor_mpc.interfaces.cli.monte_carlo:main"
-quadrotor-mpc-dashboard = "quadrotor_mpc.interfaces.cli.dashboard:main"
-quadrotor-mpc-app = "quadrotor_mpc.interfaces.cli.app:main"
+quadrotor-mpc-native = "simulation.interfaces.cli.native:main"
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["quadrotor_mpc*"]
+include = ["simulation*", "visualization*"]
 
 [tool.setuptools.data-files]
 "share/quadrotor-mpc-sim/config" = [
@@ -79,10 +77,6 @@ include = ["quadrotor_mpc*"]
     "models/bitcraze_crazyflie_2/assets/*.obj",
 ]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
-
 [tool.ruff]
 target-version = "py310"
 line-length = 100
@@ -90,7 +84,3 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I", "B", "UP"]
 ignore = ["B905"]
-
-[tool.ruff.lint.per-file-ignores]
-"quadrotor_mpc/interfaces/dashboard/Home.py" = ["N999"]
-"quadrotor_mpc/interfaces/dashboard/pages/*.py" = ["N999"]
